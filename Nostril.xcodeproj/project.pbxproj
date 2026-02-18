@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B59195ED2F466ABE00A2B51E /* NostrSDK in Frameworks */ = {isa = PBXBuildFile; productRef = B59195EC2F466ABE00A2B51E /* NostrSDK */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		B59195CD2F46656100A2B51E /* Nostril.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nostril.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -36,6 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B59195ED2F466ABE00A2B51E /* NostrSDK in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 			);
 			name = Nostril;
 			packageProductDependencies = (
+				B59195EC2F466ABE00A2B51E /* NostrSDK */,
 			);
 			productName = Nostril;
 			productReference = B59195CD2F46656100A2B51E /* Nostril.app */;
@@ -107,6 +113,9 @@
 			);
 			mainGroup = B59195C42F46656100A2B51E;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B59195EB2F466ABE00A2B51E /* XCLocalSwiftPackageReference "../nostr-sdk-ios" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B59195CE2F46656100A2B51E /* Products */;
 			projectDirPath = "";
@@ -349,6 +358,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B59195EB2F466ABE00A2B51E /* XCLocalSwiftPackageReference "../nostr-sdk-ios" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../nostr-sdk-ios";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B59195EC2F466ABE00A2B51E /* NostrSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NostrSDK;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = B59195C52F46656100A2B51E /* Project object */;
 }
