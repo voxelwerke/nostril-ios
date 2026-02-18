@@ -22,10 +22,22 @@ struct NostrilApp: App {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
+    
+    private let sharedDatastore: Datastore
+
+    init() {
+        // Initialize a shared Datastore for the app session
+        let context = ModelContext(sharedModelContainer)
+        // In a real app, obtain myPubKey from authentication/session
+        let myPubKey = "my-pubkey-placeholder"
+        self.sharedDatastore = Datastore(modelContext: context, myPubKey: myPubKey)
+        print("[App] Shared Datastore initialized with myPubKey=\(myPubKey)")
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(\.datastore, sharedDatastore)
         }
         .modelContainer(sharedModelContainer)
     }

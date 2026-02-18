@@ -23,8 +23,15 @@ final class Datastore {
     @discardableResult
     func postMessage(content: String, authorPubKey: String, otherPubKey: String) throws -> Message {
         let message = Message(content: content, authorPubKey: authorPubKey, otherPubKey: otherPubKey)
+        print("[Datastore] Posting message from\n  author: \(authorPubKey)\n  to: \(otherPubKey)\n  content: \(content)")
         modelContext.insert(message)
-        try modelContext.save()
+        do {
+            try modelContext.save()
+            print("[Datastore] Successfully saved message with id: \(String(describing: message.persistentModelID)) at \(message.createdAt)")
+        } catch {
+            print("[Datastore] Error saving message: \(error)")
+            throw error
+        }
         return message
     }
 

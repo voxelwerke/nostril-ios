@@ -2,7 +2,13 @@ import SwiftUI
 import SwiftData
 
 struct MessageView: View {
+    // MARK: - Logging
+    private func log(_ message: String) {
+        print("[MessageView] \(message)")
+    }
+
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.datastore) private var datastore
 
     let otherUserPubKey: String
     let myPubKey: String
@@ -17,9 +23,13 @@ struct MessageView: View {
         self.otherUserPubKey = otherUserPubKey
         self.myPubKey = myPubKey
 
+        log("Init with myPubKey=\(myPubKey), otherUserPubKey=\(otherUserPubKey)")
+
         // Help the type-checker by capturing values and breaking the predicate into subexpressions
         let me = myPubKey
         let other = otherUserPubKey
+
+        log("Configuring messages Query predicate for conversation between me=\(me) and other=\(other)")
 
         _messages = Query(
             filter: #Predicate<Message> { message in
@@ -41,14 +51,32 @@ struct MessageView: View {
                             MessageBubble(message: message, isMe: message.authorPubKey == myPubKey)
                                 .id(message.id)
                                 .padding(.horizontal, 12)
+                                .onAppear {
+                                    log("Rendering bubble for message id=\(String(describing: message.id)), author=\(message.authorPubKey), other=\(message.otherPubKey), createdAt=\(message.createdAt)")
+                                }
                         }
                     }
                 }
-                .onChange(of: messages.count) { _, _ in
-                    if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                .onAppear {
+                    log("ScrollView appeared. Current messages count=\(messages.count)")
+                }
+                .onChange(of: messages.count) { old, new in
+                    log("messages.count changed from \(old) to \(new)")
+                    if let last = messages.last {
+                        log("Auto-scrolling to last message id=\(String(describing: last.id)) at appear/change")
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    } else {
+                        log("No messages to scroll to")
+                    }
                 }
                 .onAppear {
-                    if let last = messages.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                    log("MessageView appeared. messages.count=\(messages.count)")
+                    if let last = messages.last {
+                        log("Scrolling to last message id=\(String(describing: last.id)) on appear")
+                        proxy.scrollTo(last.id, anchor: .bottom)
+                    } else {
+                        log("No messages to scroll to on appear")
+                    }
                 }
             }
 
@@ -59,7 +87,21 @@ struct MessageView: View {
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...6)
 
-                Button(action: send) {
+                Button(action: {
+                    let text = inputText
+                    print("Sending message")
+                    
+                    do {
+                        guard let datastore else {
+                            print("[MessageView] No shared Datastore found in environment")
+                            return
+                        }
+                        _ = try datastore.postMessage(content: text, authorPubKey: myPubKey, otherPubKey: otherUserPubKey)
+                        inputText = ""
+                    } catch {
+                        print("[MessageView] Error sending via datastore: \(error)")
+                    }
+                }) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 28))
                         .foregroundStyle(.white)
@@ -75,19 +117,6 @@ struct MessageView: View {
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func send() {
-        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        do {
-            let store = Datastore(modelContext: modelContext, myPubKey: myPubKey)
-            _ = try store.postMessage(content: text, authorPubKey: myPubKey, otherPubKey: otherUserPubKey)
-            inputText = ""
-        } catch {
-            // Handle error (log or show alert)
-            print("Failed to send message: \(error)")
-        }
     }
 }
 
@@ -116,6 +145,7 @@ private struct MessageBubble: View {
         // Seed preview data
         let me = "me"
         let other = "other"
+        print("[MessageView][Preview] Seeding preview with me=\(me), other=\(other)")
         context.insert(Message(content: "Hey there", authorPubKey: me, otherPubKey: other))
         context.insert(Message(content: "Hi!", authorPubKey: other, otherPubKey: me))
         return NavigationStack { MessageView(otherUserPubKey: other, myPubKey: me) }
