@@ -18,9 +18,12 @@ final class Datastore: NSObject {
 
     // Default relays (restore if missing)
     private static let defaultRelayURLs: [String] = [
-        "wss://relay.damus.io",
-        "wss://nos.lol"
+        "wss://relay.damus.io"
+  
     ]
+//    private static let defaultRelayURLs: [String] = [
+//        "ws://192.168.1.28:8787"
+//    ]
 
     // Keep-alive timer
     private var keepAliveTimer: Timer?
@@ -69,7 +72,7 @@ final class Datastore: NSObject {
             print("🔌 [Datastore] Connected to default relays")
 
             // Subscribe to a basic inbox/global feed example
-            try await subscribeToGlobal(limit: 10)
+            try await subscribeToDMS(limit: 10)
         } catch {
             print("❌ [Datastore] Relay setup/connect failed: \(error)")
         }
@@ -112,42 +115,49 @@ final class Datastore: NSObject {
     }
 
     func publishDirectMessage(to recipientNpub: String, plaintext: String) throws {
-        // Re-implemented using NostrClient primitives
         Task {
             do {
-                // Ensure identity is configured
-                if keyPair == nil {
-                    try await bootstrapIdentityAndRelays()
+                // Resolve recipient hex pubkey from npub
+                let recipient = try PublicKey(npub: recipientNpub)
+                let recipientHex = recipient.hex
+
+                // Ensure we have our key pair
+                guard let kp = keyPair else {
+                    throw NSError(domain: "Datastore", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing identity"])
                 }
 
-                // Build and publish a DM as a text note with p-tag (depending on library support)
-                // If NostrClient exposes a dedicated DM API in future, switch to it.
-                let recipient = try PublicKey(npub: recipientNpub)
-
-                // Use EventSigner for explicit control
-                guard let kp = keyPair else { throw NSError(domain: "Datastore", code: 1) }
-                let signer = EventSigner(keyPair: kp)
-                let dm = try signer.signTextNote(
+                // Build a sealed DM (gift-wrapped rumor -> kind 1059)
+                let builder = DirectMessageBuilder(keyPair: kp)
+                let dmEvent = try builder.createMessage(
                     content: plaintext,
-                    tags: [["p", recipient.hex]]
+                    to: recipientHex
                 )
 
-                try await client.publish(dm)
-                print("📤 [Datastore] DM published id=\(dm.id) to p=\(recipient.hex.prefix(16))…")
+                // Publish the sealed DM
+                try await client.publish(dmEvent)
+                print("📤 [Datastore] Sealed DM (1059) published id=\(dmEvent.id) to p=\(recipientNpub)…")
             } catch {
-                print("❌ [Datastore] Failed to publish DM: \(error)")
+                print("❌ [Datastore] Failed to publish sealed DM: \(error)")
             }
         }
     }
 
     // MARK: - Subscriptions
-    private func subscribeToGlobal(limit: Int) async throws {
-        // Store subscription id to allow later unsubscribe if needed
-        let subId = try await client.subscribeToGlobalFeed(limit: limit) { event in
-            print("📥 [Global] \(event.kind) id=\(event.id.prefix(16))… content=\(event.content.prefix(64))")
+    private func subscribeToDMS(limit: Int) async throws {
+        // Subscribe to DMs: rumor (14) and sealed/gift-wrapped (1059)
+        guard let myself = keyPair?.publicKeyHex else {
+            throw NSError(domain: "Datastore", code: 2, userInfo: [NSLocalizedDescriptionKey: "Missing identity for DM subscription"])
         }
+
+        // Prefer filtering by p-tag references to ourselves if supported by Filter
+        let subId = try await client.subscribe(
+            filters: [Filter(kinds: [14, 1059], pubkeyReferences: [myself])]
+        ) { event in
+            print("📥 [DM] kind=\(event.kind) id=\(event.id.prefix(16))… content=\(event.content.prefix(64))")
+        }
+
         self.inboxSubscriptionId = subId
-        print("🛰️ [Datastore] Subscribed to global feed subId=\(subId)")
+        print("🛰️ [Datastore] Subscribed to DMs (kinds 14,1059) subId=\(subId)")
     }
 }
 
