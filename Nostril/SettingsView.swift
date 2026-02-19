@@ -55,7 +55,7 @@ struct SettingsView: View {
 
     private func performLogout() {
         // Backup current private key into backups list
-        KeychainStore.backupCurrentAndLogout()
+        KeychainStore.logout()
 
         // Clear public key (this forces RootView back to SignupView)
         myPubKey = ""

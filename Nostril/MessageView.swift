@@ -96,7 +96,7 @@ struct MessageView: View {
                             print("[MessageView] No shared Datastore found in environment")
                             return
                         }
-                        _ = try datastore.postMessage(content: text, authorPubKey: myPubKey, otherPubKey: otherUserPubKey)
+                        _ = try datastore.publishDirectMessage(to: otherUserPubKey, plaintext: text)
                         inputText = ""
                     } catch {
                         print("[MessageView] Error sending via datastore: \(error)")
@@ -135,23 +135,6 @@ private struct MessageBubble: View {
             if !isMe { Spacer(minLength: 40) }
         }
         .padding(.vertical, 2)
-    }
-}
-
-#Preview {
-    do {
-        let container = try Datastore.previewContainer()
-        let context = ModelContext(container)
-        // Seed preview data
-        let me = "me"
-        let other = "other"
-        print("[MessageView][Preview] Seeding preview with me=\(me), other=\(other)")
-        context.insert(Message(content: "Hey there", authorPubKey: me, otherPubKey: other))
-        context.insert(Message(content: "Hi!", authorPubKey: other, otherPubKey: me))
-        return NavigationStack { MessageView(otherUserPubKey: other, myPubKey: me) }
-            .modelContainer(container)
-    } catch {
-        return Text("Preview failed: \(error.localizedDescription)")
     }
 }
 

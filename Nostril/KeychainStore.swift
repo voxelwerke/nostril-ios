@@ -136,6 +136,11 @@ enum KeychainStore {
         }
     }
 
+    static func logout() {
+        deleteNsec()
+    }
+    
+    
     static func backupCurrentAndLogout() {
         guard let current = loadNsec(), !current.isEmpty else { return }
 
