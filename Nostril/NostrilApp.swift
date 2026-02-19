@@ -37,7 +37,7 @@ struct NostrilApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
                 .environment(\.datastore, sharedDatastore)
         }
         .modelContainer(sharedModelContainer)

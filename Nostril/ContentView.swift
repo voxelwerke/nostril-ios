@@ -2,7 +2,8 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @State private var myPubKey: String = "my-pubkey-placeholder"
+    @AppStorage("myPubKey") private var myPubKey: String = "my-pubkey-placeholder"
+    @State private var showSettings = false
     @State private var contacts: [String] = ["npub1-alice", "npub1-bob", "npub1-carol"]
 
     var body: some View {
@@ -18,13 +19,19 @@ struct ContentView: View {
             .listStyle(.plain)
             .navigationTitle("Nostril")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                    }
                     Button {
                         contacts.append("npub1-\(Int.random(in: 1000...9999))")
                     } label: {
                         Image(systemName: "plus")
                     }
                 }
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
             }
         }
     }
