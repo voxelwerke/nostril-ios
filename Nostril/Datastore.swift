@@ -121,21 +121,9 @@ final class Datastore: NSObject {
                 let recipient = try PublicKey(npub: recipientNpub)
                 let recipientHex = recipient.hex
 
-                // Ensure we have our key pair
-                guard let kp = keyPair else {
-                    throw NSError(domain: "Datastore", code: 1, userInfo: [NSLocalizedDescriptionKey: "Missing identity"])
-                }
-
-                // Build a sealed DM (gift-wrapped rumor -> kind 1059)
-                let builder = DirectMessageBuilder(keyPair: kp)
-                let dmEvent = try builder.createMessage(
-                    content: plaintext,
-                    to: recipientHex
-                )
-
-                // Publish the sealed DM
-                try await client.publish(dmEvent)
-                print("📤 [Datastore] Sealed DM (1059) published id=\(dmEvent.id) to p=\(recipientNpub)…")
+                // Publish a sealed DM (gift-wrapped rumor -> kind 1059) via NostrClient
+                _ = try await client.sendDirectMessage(plaintext, to: recipientHex)
+                print("📤 [Datastore] Sealed DM (1059) published to p=\(recipientNpub)…")
             } catch {
                 print("❌ [Datastore] Failed to publish sealed DM: \(error)")
             }
@@ -144,20 +132,52 @@ final class Datastore: NSObject {
 
     // MARK: - Subscriptions
     private func subscribeToDMS(limit: Int) async throws {
-        // Subscribe to DMs: rumor (14) and sealed/gift-wrapped (1059)
-        guard let myself = keyPair?.publicKeyHex else {
-            throw NSError(domain: "Datastore", code: 2, userInfo: [NSLocalizedDescriptionKey: "Missing identity for DM subscription"])
-        }
+        // Subscribe to gift-wrapped direct messages addressed to us, then parse to plaintext and persist
+        let subId = try await client.subscribeToDirectMessages(limit: limit) { [weak self] giftWrap in
+            guard let self else { return }
+            print("📥 [DM] giftWrap kind=\(giftWrap.kind) id=\(giftWrap.id.prefix(16))…")
 
-        // Prefer filtering by p-tag references to ourselves if supported by Filter
-        let subId = try await client.subscribe(
-            filters: [Filter(kinds: [14, 1059], pubkeyReferences: [myself])]
-        ) { event in
-            print("📥 [DM] kind=\(event.kind) id=\(event.id.prefix(16))… content=\(event.content.prefix(64))")
+            Task { @MainActor in
+                do {
+                    print("dm sender=\(giftWrap.pubkey) to=\(giftWrap.tags) my npub=\(self.keyPair!.npub)")
+
+                    // Parse to DirectMessage (plaintext + metadata)
+                    let dm = try await self.client.parseDirectMessage(giftWrap)
+
+                    // Upsert by eventID (string), not by UUID id
+                    let fetch = FetchDescriptor<Message>(
+                        predicate: #Predicate { $0.eventID == giftWrap.id }
+                    )
+                    let existing = try self.modelContext.fetch(fetch)
+
+                    if existing.isEmpty {
+                        // Build author/other pubkeys depending on direction
+                        let author = dm.senderPubkey
+                        let other = dm.recipientPubkey
+
+                        let message = Message(
+                            createdAt: dm.createdAt,
+                            content: dm.content,
+                            authorPubKey: author,
+                            otherPubKey: other,
+                            eventID: giftWrap.id
+                        )
+                        self.modelContext.insert(message)
+                        try self.modelContext.save()
+                        print("💾 [Datastore] Saved DM eventID=\(giftWrap.id.prefix(16))…")
+                    } else {
+                        // Optional: update existing with any new fields
+                        // existing[0].content = dm.content
+                        // try self.modelContext.save()
+                    }
+                } catch {
+                    print("❌ [Datastore] Failed to parse/save DM: \(error)")
+                }
+            }
         }
 
         self.inboxSubscriptionId = subId
-        print("🛰️ [Datastore] Subscribed to DMs (kinds 14,1059) subId=\(subId)")
+        print("🛰️ [Datastore] Subscribed to DMs via NostrClient subId=\(subId)")
     }
 }
 
