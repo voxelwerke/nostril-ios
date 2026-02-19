@@ -1,4 +1,5 @@
 import SwiftUI
+import NostrSDK
 
 struct SignupView: View {
     @AppStorage("displayName") private var displayName: String = ""
@@ -6,71 +7,92 @@ struct SignupView: View {
 
     @State private var tempDisplayName: String = ""
     @State private var generatedPubKey: String = ""
+    @State private var generatedPrivateKey: String = ""
     @State private var isImportingPrivateKey: Bool = false
     @State private var importedPrivateKey: String = ""
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Welcome to Nost")
-                    .font(.largeTitle).bold()
+                Text("Welcome to Nostril")
+                    .font(.largeTitle.weight(.semibold))
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Username:")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Username")
                         .font(.headline)
                     TextField("Enter a username", text: $tempDisplayName)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
                         .textInputAutocapitalization(.words)
                         .disableAutocorrection(true)
+                    Divider()
                 }
 
                 if isImportingPrivateKey {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("your private key:")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Private key")
                             .font(.headline)
                         TextField("Paste your private key", text: $importedPrivateKey, axis: .vertical)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.plain)
                             .lineLimit(3, reservesSpace: true)
                             .textInputAutocapitalization(.never)
                             .disableAutocorrection(true)
+                        Divider()
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Your new public key:")
+                        Text("Your nostr identity (npub)")
                             .font(.headline)
-                        Text(generatedPubKey.isEmpty ? "Will be generated" : generatedPubKey)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(10)
-                            .background(Color(.secondarySystemBackground))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(displayedNpub)
+                                    .font(.body.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Divider()
+                            }
+
+                            Button {
+                                regenerateKeys()
+                            } label: {
+                                Image(systemName: "dice")
+                                    .imageScale(.large)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Regenerate key")
+                        }
                     }
                 }
 
                 Text("Your private key will be stored in your keychain. ")
                 
-                Text("Import key").underline().foregroundStyle(.blue).onTapGesture {
+                Button {
                     withAnimation { isImportingPrivateKey.toggle() }
+                } label: {
+                    Text(isImportingPrivateKey ? "Generate new key" : "Import key")
+                        .underline()
                 }
+                .buttonStyle(.plain)
 
                 Spacer()
 
-                Button(action: beginTapped) {
-                    Text("Begin")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(canBegin ? Color.blue : Color.gray)
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .disabled(!canBegin)
+                Button("Begin", action: beginTapped)
+                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canBegin)
             }
             .padding()
             .onAppear(perform: prepareKeys)
         }
+    }
+
+    private var displayedNpub: String {
+        let raw = generatedPubKey.isEmpty ? "Will be generated" : generatedPubKey
+        // Common UI convention: show a short prefix and suffix with an ellipsis in the middle.
+        // Example: npub1abcd…wxyz
+        return truncateMiddle(raw, prefix: 10, suffix: 8)
     }
 
     private var canBegin: Bool {
@@ -82,10 +104,23 @@ struct SignupView: View {
     }
 
     private func prepareKeys() {
-        // Generate a placeholder public key for demo purposes
         if generatedPubKey.isEmpty {
-            generatedPubKey = "npub1-" + String(Int.random(in: 100000...999999))
+            regenerateKeys()
         }
+    }
+
+    private func regenerateKeys() {
+        // Generate a real nostr keypair via NostrSDK
+        guard let keypair = Keypair() else {
+            generatedPubKey = ""
+            generatedPrivateKey = ""
+            return
+        }
+
+        // Display npub in the UI
+        generatedPubKey = keypair.publicKey.npub
+        // Store nsec for persistence on Begin
+        generatedPrivateKey = keypair.privateKey.nsec
     }
 
     private func beginTapped() {
@@ -98,12 +133,18 @@ struct SignupView: View {
             // For demo, derive a fake public key from private key length
             myPubKey = "npub1-" + String(importedPrivateKey.hashValue & 0xFFFF)
         } else {
-            // Store the generated public key
+            // Store the generated public key (npub)
             myPubKey = generatedPubKey
-            // Also create and store a private key in keychain (stubbed)
-            let newPrivateKey = "nsec1-" + String(Int.random(in: 100000...999999))
-            storePrivateKeyInKeychain(newPrivateKey)
+            // Store the generated private key (nsec) in keychain
+            storePrivateKeyInKeychain(generatedPrivateKey)
         }
+    }
+
+    private func truncateMiddle(_ s: String, prefix: Int, suffix: Int) -> String {
+        guard s.count > prefix + suffix + 1 else { return s }
+        let start = s.prefix(prefix)
+        let end = s.suffix(suffix)
+        return "\(start)…\(end)"
     }
 
     private func storePrivateKeyInKeychain(_ key: String) {
