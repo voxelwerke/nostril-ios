@@ -14,7 +14,7 @@ enum KeychainStore {
 
     // MARK: - Primary Key (NO Face ID)
 
-    static func storeNsec(_ nsec: String) {
+    static func saveNsec(_ nsec: String) {
         let data = Data(nsec.utf8)
 
         let query: [String: Any] = [

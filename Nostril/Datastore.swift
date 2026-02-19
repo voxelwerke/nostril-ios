@@ -1,273 +1,153 @@
 import Foundation
 import SwiftData
-import NostrSDK
-import Security
+import NostrClient
 
-final class Datastore: NSObject, EventCreating, RelayDelegate {
-    
+@MainActor
+final class Datastore: NSObject {
+    // MARK: - Dependencies
     private let modelContext: ModelContext
-    private let myPubKey: String?
-    private let myKeypair: Keypair?
-    private let relayPool: RelayPool
 
-    // Track last AUTH event id for post-auth actions
-    private var lastAuthEventId: String?
+    // MARK: - Nostr Client
+    private let client = NostrClient()
+
+    // Persisted identity
+    private var keyPair: KeyPair?
+
+    // Subscriptions tracking
+    private var inboxSubscriptionId: String?
 
     // Default relays (restore if missing)
     private static let defaultRelayURLs: [String] = [
-        "ws://192.168.1.28:8787",
+        "wss://relay.damus.io",
+        "wss://nos.lol"
     ]
-    
+
     // Keep-alive timer
     private var keepAliveTimer: Timer?
-    private let inboxSubscriptionId = "inbox-sub"
 
+    // MARK: - Init / Deinit
     init(modelContext: ModelContext) {
-        print("🟡 [Datastore] INIT starting")
-
         self.modelContext = modelContext
-
-        let nsec = KeychainStore.loadNsec()
-        let kp: Keypair?
-        if let nsec, !nsec.isEmpty {
-            print("✅ [Datastore] Loaded nsec from Keychain")
-            kp = Keypair(nsec: nsec)
-        } else {
-            print("⚠️ [Datastore] No private key found in Keychain")
-            kp = nil
-        }
-        self.myKeypair = kp
-
-        self.myPubKey = kp?.publicKey.npub
-        print("🔑 [Datastore] Using pubkey: \(self.myPubKey)")
-
-        self.relayPool = RelayPool(relays: [])
-
         super.init()
 
-        self.relayPool.delegate = self
+        // Attempt to load nsec from keychain and configure client
+        Task { [weak self] in
+            await self?.bootstrapIdentityAndRelays()
+        }
 
-        // Start keep-alive timer
         startKeepAliveTimer()
-
-        print("🟡 [Datastore] Connecting default relays...")
-        self.connectDefaultRelays()
     }
 
     deinit {
-        print("🧨 Datastore deinit")
         keepAliveTimer?.invalidate()
     }
 
-    
-    // MARK: - Helpers
-
-    private func createAuthEvent(
-        challenge: String,
-        relayURL: URL,
-        signedBy keypair: Keypair
-    ) throws -> AuthenticationEvent {
-        try AuthenticationEvent.Builder()
-            .relayURL(relayURL)
-            .challenge(challenge)
-            .build(signedBy: keypair)
-    }
-
-    private func handleAuthChallenge(
-        _ challenge: String,
-        from relay: Relay,
-        signedBy keypair: Keypair
-    ) throws {
-        let authEvent = try createAuthEvent(
-            challenge: challenge,
-            relayURL: relay.url,
-            signedBy: keypair
-        )
-
-        print("🔐 [Datastore] Built AUTH event id=\(authEvent.id)")
-
-        self.lastAuthEventId = authEvent.id
+    // MARK: - Bootstrap
+    private func bootstrapIdentityAndRelays() async {
+        // Load nsec from your existing keychain helper if available
+        let nsec = KeychainStore.loadNsec()
+        do {
+            if let nsec, !nsec.isEmpty {
+                try await client.setNsec(nsec)
+                self.keyPair = try KeyPair(nsec: nsec)
+                print("🔑 [Datastore] Loaded identity npub=\(self.keyPair?.npub ?? "-")")
+            } else {
+                // If no key, create one and store it
+                let generated = try KeyPair()
+                self.keyPair = generated
+                try await client.setNsec(generated.nsec)
+                KeychainStore.saveNsec(generated.nsec)
+                print("🆕 [Datastore] Generated new identity npub=\(generated.npub)")
+            }
+        } catch {
+            print("❌ [Datastore] Failed to configure identity: \(error)")
+        }
 
         do {
-            try relay.authenticate(with: authEvent)
-            print("✅ [Datastore] Authenticated")
+            try await client.addRelays(Self.defaultRelayURLs)
+            try await client.connect()
+            print("🔌 [Datastore] Connected to default relays")
+
+            // Subscribe to a basic inbox/global feed example
+            try await subscribeToGlobal(limit: 10)
         } catch {
-            print("❌ [Datastore] Failed to authenticate: \(error)")
+            print("❌ [Datastore] Relay setup/connect failed: \(error)")
         }
     }
 
-    // MARK: - Keep Alive & Subscriptions
-
+    // MARK: - Keep Alive
     private func startKeepAliveTimer() {
         keepAliveTimer?.invalidate()
-        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
-            self?.pingRelay()
+        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+            Task { await self?.sendKeepAliveNote() }
         }
-        RunLoop.main.add(keepAliveTimer!, forMode: .common)
+        if let timer = keepAliveTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
         print("⏱️ [Datastore] Keep-alive timer started")
     }
 
-    private func pingRelay() {
-        guard let relay = relayPool.relays.first else {
-            print("⏱️ [Datastore] No relay to ping")
-            return
-        }
-        guard let keypair = myKeypair else {
-            print("⏱️ [Datastore] No keypair for ping")
-            return
-        }
-        // Use a small DM-to-self probe to keep the connection warm and trigger auth if needed
-        let probeDM = DirectMessageEvent.Builder()
-            .content("ping")
-            .build(pubkey: keypair.publicKey.hex)
+    private func sendKeepAliveNote() async {
+        guard let _ = keyPair else { return }
         do {
-            let wrapToSelf = try giftWrap(
-                withDirectMessageEvent: probeDM,
-                toRecipient: keypair.publicKey,
-                signedBy: keypair
-            )
-            try relay.publishEvent(wrapToSelf)
-            print("📡 [Datastore] Keep-alive probe sent")
+            let event = try await client.publishTextNote(content: "ping")
+            print("📡 [Datastore] Keep-alive note id=\(event.id)")
         } catch {
-            print("⚠️ [Datastore] Keep-alive probe failed: \(error)")
+            print("⚠️ [Datastore] Keep-alive failed: \(error)")
         }
     }
 
-    private func subscribeToInbox(on relay: Relay) {
-        // TODO: Implement inbox subscription using NostrSDK's actual Filter/Subscription API.
-        // Temporarily disabled to avoid compile errors due to unknown SDK types.
-        print("🛰️ [Datastore] subscribeToInbox placeholder — implement with SDK-specific filters")
-    }
-
-    // MARK: - RelayDelegate
-
-    func relayStateDidChange(_ relay: Relay, state: Relay.State) {
-        print("🔌 [RelayState] \(relay.url) -> \(state)")
-
-        if state == .connected {
-            print("🔄 Relay connected — subscribing and pinging")
-            subscribeToInbox(on: relay)
-            pingRelay()
-        }
-    }
-    
-    func relay(_ relay: Relay, didReceive response: RelayResponse) {
-        print("📥 [RelayResponse] From \(relay.url): \(response)")
-
-        switch response {
-
-        case .auth(let challenge):
-            print("🔐 [Relay AUTH challenge] \(challenge)")
-
-            guard let keypair = myKeypair else {
-                print("❌ [Datastore] Cannot auth — no private key")
-                return
-            }
-
-            do {
-                try handleAuthChallenge(challenge, from: relay, signedBy: keypair)
-            } catch {
-                print("❌ [Datastore] Failed to handle AUTH challenge: \(error)")
-            }
-
-        case .ok(_, let success, let message):
-            print("✅ [Relay OK] success=\(success) message=\(message.message)")
-            // If AUTH just succeeded, we could flush any pending events here if you add a queue.
-
-        case .notice(let message):
-            print("📢 [Relay NOTICE] \(message)")
-
-        case .closed(let subId, let message):
-            print("❌ [Relay CLOSED] subId=\(subId) message=\(message.message)")
-
-        default:
-            break
-        }
-    }
-
-    func relay(_ relay: Relay, didReceive event: RelayEvent) {
-        print("📨 [RelayEvent] subscription=\(event.subscriptionId) kind=\(event.event.kind)")
-    }
-
-    // MARK: - Relays
+    // MARK: - Public API (re-implemented)
 
     func connectDefaultRelays() {
-        for urlString in Self.defaultRelayURLs {
-            guard let url = URL(string: urlString) else {
-                print("❌ [Datastore] Invalid relay URL: \(urlString)")
-                continue
-            }
-
+        Task {
             do {
-                let relay = try Relay(url: url)
-                print("➕ [Datastore] Adding relay \(url)")
-                relayPool.add(relay: relay)
+                try await client.addRelays(Self.defaultRelayURLs)
+                try await client.connect()
+                print("🔌 [Datastore] connectDefaultRelays -> connected")
             } catch {
-                print("❌ [Datastore] Failed to create relay for \(urlString): \(error)")
+                print("❌ [Datastore] connectDefaultRelays failed: \(error)")
             }
         }
-
-        print("🔌 [Datastore] Calling relayPool.connect()")
-        relayPool.connect()
     }
-
-    // MARK: - Nostr publish
 
     func publishDirectMessage(to recipientNpub: String, plaintext: String) throws {
-        print("📤 [Datastore] Attempting to publish DM")
-        print("   recipient npub: \(recipientNpub)")
-        print("   plaintext: \(plaintext)")
+        // Re-implemented using NostrClient primitives
+        Task {
+            do {
+                // Ensure identity is configured
+                if keyPair == nil {
+                    try await bootstrapIdentityAndRelays()
+                }
 
-        relayPool.relays.forEach {
-            print("   - \($0.url) state=\($0.state)")
+                // Build and publish a DM as a text note with p-tag (depending on library support)
+                // If NostrClient exposes a dedicated DM API in future, switch to it.
+                let recipient = try PublicKey(npub: recipientNpub)
+
+                // Use EventSigner for explicit control
+                guard let kp = keyPair else { throw NSError(domain: "Datastore", code: 1) }
+                let signer = EventSigner(keyPair: kp)
+                let dm = try signer.signTextNote(
+                    content: plaintext,
+                    tags: [["p", recipient.hex]]
+                )
+
+                try await client.publish(dm)
+                print("📤 [Datastore] DM published id=\(dm.id) to p=\(recipient.hex.prefix(16))…")
+            } catch {
+                print("❌ [Datastore] Failed to publish DM: \(error)")
+            }
         }
+    }
 
-        guard let senderKeypair = myKeypair else {
-            print("❌ [Datastore] Missing private key")
-            throw NSError(domain: "Datastore", code: 1)
+    // MARK: - Subscriptions
+    private func subscribeToGlobal(limit: Int) async throws {
+        // Store subscription id to allow later unsubscribe if needed
+        let subId = try await client.subscribeToGlobalFeed(limit: limit) { event in
+            print("📥 [Global] \(event.kind) id=\(event.id.prefix(16))… content=\(event.content.prefix(64))")
         }
-
-        guard let recipientPub = PublicKey(npub: recipientNpub) else {
-            print("❌ [Datastore] Invalid recipient npub")
-            throw NSError(domain: "Datastore", code: 2)
-        }
-
-        let directMessage = DirectMessageEvent.Builder()
-            .content(plaintext)
-            .build(pubkey: senderKeypair.publicKey.hex)
-
-        print("✉️ [Datastore] Built DirectMessage id=\(directMessage.id)")
-
-        let giftWrapForRecipient = try giftWrap(
-            withDirectMessageEvent: directMessage,
-            toRecipient: recipientPub,
-            signedBy: senderKeypair
-        )
-
-        let giftWrapForSender = try giftWrap(
-            withDirectMessageEvent: directMessage,
-            toRecipient: senderKeypair.publicKey,
-            signedBy: senderKeypair
-        )
-
-        guard let relay = relayPool.relays.first else {
-            print("❌ [Datastore] No relay available")
-            return
-        }
-
-        guard relay.state == .connected else {
-            print("❌ [Datastore] Relay not connected")
-            return
-        }
-
-        do {
-            try relay.publishEvent(giftWrapForRecipient)
-            try relay.publishEvent(giftWrapForSender)
-            print("📡 [Datastore] DM published directly to relay")
-        } catch {
-            print("❌ [Datastore] Failed to publish DM: \(error)")
-        }
-
-        print("📡 [Datastore] Publish calls issued")
+        self.inboxSubscriptionId = subId
+        print("🛰️ [Datastore] Subscribed to global feed subId=\(subId)")
     }
 }
+

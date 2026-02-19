@@ -1,5 +1,5 @@
 import SwiftUI
-import NostrSDK
+import NostrClient
 import Security
 
 
@@ -112,17 +112,18 @@ struct SignupView: View {
     }
 
     private func regenerateKeys() {
-        // Generate a real nostr keypair via NostrSDK
-        guard let keypair = Keypair() else {
+        do {
+            // Generate a real nostr keypair via NostrClient
+            let kp = try KeyPair()
+            // Display npub in the UI
+            generatedPubKey = kp.npub
+            // Store nsec for persistence on Begin
+            generatedPrivateKey = kp.nsec
+        } catch {
             generatedPubKey = ""
             generatedPrivateKey = ""
-            return
+            print("❌ [Signup] Failed to generate keys: \(error)")
         }
-
-        // Display npub in the UI
-        generatedPubKey = keypair.publicKey.npub
-        // Store nsec for persistence on Begin
-        generatedPrivateKey = keypair.privateKey.nsec
     }
 
     private func beginTapped() {
@@ -132,8 +133,13 @@ struct SignupView: View {
         if isImportingPrivateKey {
             // Store the private key in keychain (stubbed here). Derive public key from the private key.
             storePrivateKeyInKeychain(importedPrivateKey)
-            // For demo, derive a fake public key from private key length
-            myPubKey = "npub1-" + String(importedPrivateKey.hashValue & 0xFFFF)
+            do {
+                let kp = try KeyPair(nsec: importedPrivateKey)
+                myPubKey = kp.npub
+            } catch {
+                print("❌ [Signup] Invalid imported private key: \(error)")
+                myPubKey = ""
+            }
         } else {
             // Store the generated public key (npub)
             myPubKey = generatedPubKey
@@ -150,7 +156,7 @@ struct SignupView: View {
     }
 
     private func storePrivateKeyInKeychain(_ key: String) {
-        KeychainStore.storeNsec(key)
+        KeychainStore.saveNsec(key)
     }
 }
 

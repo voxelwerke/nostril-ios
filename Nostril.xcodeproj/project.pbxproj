@@ -7,8 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B59195ED2F466ABE00A2B51E /* NostrSDK in Frameworks */ = {isa = PBXBuildFile; productRef = B59195EC2F466ABE00A2B51E /* NostrSDK */; };
-		B5DAF4D22F46B95B00A38443 /* NostrSDK in Frameworks */ = {isa = PBXBuildFile; productRef = B5DAF4D12F46B95B00A38443 /* NostrSDK */; };
+		B5DAF4D52F47D20A00A38443 /* NostrClient in Frameworks */ = {isa = PBXBuildFile; productRef = B5DAF4D42F47D20A00A38443 /* NostrClient */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,8 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B5DAF4D22F46B95B00A38443 /* NostrSDK in Frameworks */,
-				B59195ED2F466ABE00A2B51E /* NostrSDK in Frameworks */,
+				B5DAF4D52F47D20A00A38443 /* NostrClient in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,8 +83,7 @@
 			);
 			name = Nostril;
 			packageProductDependencies = (
-				B59195EC2F466ABE00A2B51E /* NostrSDK */,
-				B5DAF4D12F46B95B00A38443 /* NostrSDK */,
+				B5DAF4D42F47D20A00A38443 /* NostrClient */,
 			);
 			productName = Nostril;
 			productReference = B59195CD2F46656100A2B51E /* Nostril.app */;
@@ -117,7 +114,7 @@
 			mainGroup = B59195C42F46656100A2B51E;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				B5DAF4D02F46B95B00A38443 /* XCLocalSwiftPackageReference "../nostr-sdk-ios" */,
+				B5DAF4D32F47D20A00A38443 /* XCRemoteSwiftPackageReference "swift-nostr-client" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B59195CE2F46656100A2B51E /* Products */;
@@ -366,21 +363,22 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		B5DAF4D02F46B95B00A38443 /* XCLocalSwiftPackageReference "../nostr-sdk-ios" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "../nostr-sdk-ios";
+/* Begin XCRemoteSwiftPackageReference section */
+		B5DAF4D32F47D20A00A38443 /* XCRemoteSwiftPackageReference "swift-nostr-client" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/yysskk/swift-nostr-client";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
 		};
-/* End XCLocalSwiftPackageReference section */
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		B59195EC2F466ABE00A2B51E /* NostrSDK */ = {
+		B5DAF4D42F47D20A00A38443 /* NostrClient */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = NostrSDK;
-		};
-		B5DAF4D12F46B95B00A38443 /* NostrSDK */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = NostrSDK;
+			package = B5DAF4D32F47D20A00A38443 /* XCRemoteSwiftPackageReference "swift-nostr-client" */;
+			productName = NostrClient;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
