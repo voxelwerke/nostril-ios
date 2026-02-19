@@ -10,9 +10,17 @@ final class Datastore: NSObject, EventCreating, RelayDelegate {
     private let myKeypair: Keypair?
     private let relayPool: RelayPool
 
+    // Track last AUTH event id for post-auth actions
+    private var lastAuthEventId: String?
+
+    // Default relays (restore if missing)
     private static let defaultRelayURLs: [String] = [
         "ws://192.168.1.28:8787",
     ]
+    
+    // Keep-alive timer
+    private var keepAliveTimer: Timer?
+    private let inboxSubscriptionId = "inbox-sub"
 
     init(modelContext: ModelContext, myPubKey: String) {
         print("🟡 [Datastore] INIT starting")
@@ -39,8 +47,15 @@ final class Datastore: NSObject, EventCreating, RelayDelegate {
 
         self.relayPool.delegate = self
 
+        // Start keep-alive timer
+        startKeepAliveTimer()
+
         print("🟡 [Datastore] Connecting default relays...")
         self.connectDefaultRelays()
+    }
+
+    deinit {
+        keepAliveTimer?.invalidate()
     }
 
     // MARK: - Helpers
@@ -69,23 +84,71 @@ final class Datastore: NSObject, EventCreating, RelayDelegate {
 
         print("🔐 [Datastore] Built AUTH event id=\(authEvent.id)")
 
+        self.lastAuthEventId = authEvent.id
+
         do {
             try relay.authenticate(with: authEvent)
-            print("✅ [Datastore] AUTH event published via publishEvent()")
+            print("✅ [Datastore] Authenticated")
         } catch {
-            print("❌ [Datastore] Failed to publish AUTH event: \(error)")
+            print("❌ [Datastore] Failed to authenticate: \(error)")
         }
-        
-        
-        print("✅ [Datastore] AUTH request sent via relay.send()")
+    }
+
+    // MARK: - Keep Alive & Subscriptions
+
+    private func startKeepAliveTimer() {
+        keepAliveTimer?.invalidate()
+        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            self?.pingRelay()
+        }
+        RunLoop.main.add(keepAliveTimer!, forMode: .common)
+        print("⏱️ [Datastore] Keep-alive timer started")
+    }
+
+    private func pingRelay() {
+        guard let relay = relayPool.relays.first else {
+            print("⏱️ [Datastore] No relay to ping")
+            return
+        }
+        guard let keypair = myKeypair else {
+            print("⏱️ [Datastore] No keypair for ping")
+            return
+        }
+        // Use a small DM-to-self probe to keep the connection warm and trigger auth if needed
+        let probeDM = DirectMessageEvent.Builder()
+            .content("ping")
+            .build(pubkey: keypair.publicKey.hex)
+        do {
+            let wrapToSelf = try giftWrap(
+                withDirectMessageEvent: probeDM,
+                toRecipient: keypair.publicKey,
+                signedBy: keypair
+            )
+            try relay.publishEvent(wrapToSelf)
+            print("📡 [Datastore] Keep-alive probe sent")
+        } catch {
+            print("⚠️ [Datastore] Keep-alive probe failed: \(error)")
+        }
+    }
+
+    private func subscribeToInbox(on relay: Relay) {
+        // TODO: Implement inbox subscription using NostrSDK's actual Filter/Subscription API.
+        // Temporarily disabled to avoid compile errors due to unknown SDK types.
+        print("🛰️ [Datastore] subscribeToInbox placeholder — implement with SDK-specific filters")
     }
 
     // MARK: - RelayDelegate
 
     func relayStateDidChange(_ relay: Relay, state: Relay.State) {
         print("🔌 [RelayState] \(relay.url) -> \(state)")
-    }
 
+        if state == .connected {
+            print("🔄 Relay connected — subscribing and pinging")
+            subscribeToInbox(on: relay)
+            pingRelay()
+        }
+    }
+    
     func relay(_ relay: Relay, didReceive response: RelayResponse) {
         print("📥 [RelayResponse] From \(relay.url): \(response)")
 
@@ -105,8 +168,9 @@ final class Datastore: NSObject, EventCreating, RelayDelegate {
                 print("❌ [Datastore] Failed to handle AUTH challenge: \(error)")
             }
 
-        case .ok(let eventId, let success, let message):
-            print("✅ [Relay OK] eventId=\(eventId) success=\(success) message=\(message.message)")
+        case .ok(_, let success, let message):
+            print("✅ [Relay OK] success=\(success) message=\(message.message)")
+            // If AUTH just succeeded, we could flush any pending events here if you add a queue.
 
         case .notice(let message):
             print("📢 [Relay NOTICE] \(message)")
@@ -184,8 +248,23 @@ final class Datastore: NSObject, EventCreating, RelayDelegate {
             signedBy: senderKeypair
         )
 
-        relayPool.publishEvent(giftWrapForRecipient)
-        relayPool.publishEvent(giftWrapForSender)
+        guard let relay = relayPool.relays.first else {
+            print("❌ [Datastore] No relay available")
+            return
+        }
+
+        guard relay.state == .connected else {
+            print("❌ [Datastore] Relay not connected")
+            return
+        }
+
+        do {
+            try relay.publishEvent(giftWrapForRecipient)
+            try relay.publishEvent(giftWrapForSender)
+            print("📡 [Datastore] DM published directly to relay")
+        } catch {
+            print("❌ [Datastore] Failed to publish DM: \(error)")
+        }
 
         print("📡 [Datastore] Publish calls issued")
     }
