@@ -1,5 +1,7 @@
 import SwiftUI
 import NostrSDK
+import Security
+
 
 struct SignupView: View {
     @AppStorage("displayName") private var displayName: String = ""
@@ -148,8 +150,7 @@ struct SignupView: View {
     }
 
     private func storePrivateKeyInKeychain(_ key: String) {
-        // TODO: Replace with real Keychain storage.
-        print("[Signup] Stored private key in keychain: \(key.prefix(8))…")
+        KeychainStore.storeNsec(key)
     }
 }
 

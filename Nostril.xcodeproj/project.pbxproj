@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B59195ED2F466ABE00A2B51E /* NostrSDK in Frameworks */ = {isa = PBXBuildFile; productRef = B59195EC2F466ABE00A2B51E /* NostrSDK */; };
+		B5DAF4D22F46B95B00A38443 /* NostrSDK in Frameworks */ = {isa = PBXBuildFile; productRef = B5DAF4D12F46B95B00A38443 /* NostrSDK */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +41,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B5DAF4D22F46B95B00A38443 /* NostrSDK in Frameworks */,
 				B59195ED2F466ABE00A2B51E /* NostrSDK in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -84,6 +86,7 @@
 			name = Nostril;
 			packageProductDependencies = (
 				B59195EC2F466ABE00A2B51E /* NostrSDK */,
+				B5DAF4D12F46B95B00A38443 /* NostrSDK */,
 			);
 			productName = Nostril;
 			productReference = B59195CD2F46656100A2B51E /* Nostril.app */;
@@ -97,7 +100,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					B59195CC2F46656100A2B51E = {
 						CreatedOnToolsVersion = 26.2;
@@ -114,7 +117,7 @@
 			mainGroup = B59195C42F46656100A2B51E;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				B59195EB2F466ABE00A2B51E /* XCLocalSwiftPackageReference "../nostr-sdk-ios" */,
+				B5DAF4D02F46B95B00A38443 /* XCLocalSwiftPackageReference "../nostr-sdk-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B59195CE2F46656100A2B51E /* Products */;
@@ -276,6 +279,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -333,6 +337,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -362,7 +367,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		B59195EB2F466ABE00A2B51E /* XCLocalSwiftPackageReference "../nostr-sdk-ios" */ = {
+		B5DAF4D02F46B95B00A38443 /* XCLocalSwiftPackageReference "../nostr-sdk-ios" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "../nostr-sdk-ios";
 		};
@@ -370,6 +375,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		B59195EC2F466ABE00A2B51E /* NostrSDK */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NostrSDK;
+		};
+		B5DAF4D12F46B95B00A38443 /* NostrSDK */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = NostrSDK;
 		};
