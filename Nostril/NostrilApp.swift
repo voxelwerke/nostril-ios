@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import Combine
 
 @main
 struct NostrilApp: App {
@@ -24,23 +25,29 @@ struct NostrilApp: App {
         }
     }()
     
-    private let sharedDatastore: Datastore
+    @StateObject private var datastoreHolder: DatastoreHolder
 
     init() {
-        // Initialize a shared Datastore for the app session
         let context = ModelContext(sharedModelContainer)
-        // In a real app, obtain myPubKey from authentication/session
-        let myPubKey = "my-pubkey-placeholder"
-        self.sharedDatastore = Datastore(modelContext: context, myPubKey: myPubKey)
-        print("[App] Shared Datastore initialized with myPubKey=\(myPubKey)")
+        _datastoreHolder = StateObject(wrappedValue: DatastoreHolder(context: context))
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(\.datastore, sharedDatastore)
+                .environment(\.datastore, datastoreHolder.datastore)
         }
         .modelContainer(sharedModelContainer)
+    }
+
+}
+
+
+final class DatastoreHolder: ObservableObject {
+    let datastore: Datastore
+
+    init(context: ModelContext) {
+        datastore = Datastore(modelContext: context)
     }
 }
 

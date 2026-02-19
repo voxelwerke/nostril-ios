@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct MessageView: View {
-/
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.datastore) private var datastore
 

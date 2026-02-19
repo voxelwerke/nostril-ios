@@ -6,7 +6,7 @@ import Security
 final class Datastore: NSObject, EventCreating, RelayDelegate {
     
     private let modelContext: ModelContext
-    private let myPubKey: String
+    private let myPubKey: String?
     private let myKeypair: Keypair?
     private let relayPool: RelayPool
 
@@ -22,7 +22,7 @@ final class Datastore: NSObject, EventCreating, RelayDelegate {
     private var keepAliveTimer: Timer?
     private let inboxSubscriptionId = "inbox-sub"
 
-    init(modelContext: ModelContext, myPubKey: String) {
+    init(modelContext: ModelContext) {
         print("🟡 [Datastore] INIT starting")
 
         self.modelContext = modelContext
@@ -38,7 +38,7 @@ final class Datastore: NSObject, EventCreating, RelayDelegate {
         }
         self.myKeypair = kp
 
-        self.myPubKey = kp?.publicKey.npub ?? myPubKey
+        self.myPubKey = kp?.publicKey.npub
         print("🔑 [Datastore] Using pubkey: \(self.myPubKey)")
 
         self.relayPool = RelayPool(relays: [])
@@ -55,9 +55,11 @@ final class Datastore: NSObject, EventCreating, RelayDelegate {
     }
 
     deinit {
+        print("🧨 Datastore deinit")
         keepAliveTimer?.invalidate()
     }
 
+    
     // MARK: - Helpers
 
     private func createAuthEvent(
