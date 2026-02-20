@@ -10,6 +10,9 @@ import SwiftData
 import NostrClient
 
 struct ChatView: View {
+    @Binding var isTabBarHidden: Bool
+   
+
     @State private var path = NavigationPath()
     @Environment(\.modelContext) private var modelContext
     @Environment(\.datastore) private var datastore
@@ -21,7 +24,8 @@ struct ChatView: View {
                 ForEach(contacts) { contact in
                     Button {
                         path.append(contact.npub)
-                    } label: {
+                            isTabBarHidden = true
+                        } label: {
                         ConversationRow(
                             pub: contact.npub,
                             unreadCount: contact.unreadCount
@@ -35,6 +39,9 @@ struct ChatView: View {
             .navigationTitle("Chat")
             .navigationDestination(for: String.self) { npub in
                 MessageView(npub: npub)
+            }
+            .onAppear {
+                isTabBarHidden = false
             }
         }
     }

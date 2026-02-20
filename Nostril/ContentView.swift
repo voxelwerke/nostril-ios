@@ -6,22 +6,25 @@ struct ContentView: View {
     @Environment(\.datastore) private var datastore
     
     @State private var selectedTab: String = "Chat"
+    @State private var isTabBarHidden: Bool = false   // ✅ ADD THIS
     
     var body: some View {
         Group {
             switch selectedTab {
             case "Chat":
-                ChatView()
+                ChatView(isTabBarHidden: $isTabBarHidden)   // ✅ PASS BINDING
             case "Space":
                 Text("Space")
             case "Explore":
                 Text("Explore")
             default:
-                ChatView()
+                ChatView(isTabBarHidden: $isTabBarHidden)
             }
         }
         .safeAreaInset(edge: .bottom) {
-            tabBar
+            if !isTabBarHidden {       // ✅ CONDITIONAL
+                tabBar
+            }
         }
     }
     
