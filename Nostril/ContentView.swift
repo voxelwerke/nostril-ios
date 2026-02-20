@@ -6,13 +6,13 @@ struct ContentView: View {
     @Environment(\.datastore) private var datastore
     
     @State private var selectedTab: String = "Chat"
-    @State private var isTabBarHidden: Bool = false   // ✅ ADD THIS
+    @State private var isTabBarHidden: Bool = false
     
     var body: some View {
         Group {
             switch selectedTab {
             case "Chat":
-                ChatView(isTabBarHidden: $isTabBarHidden)   // ✅ PASS BINDING
+                ChatView(isTabBarHidden: $isTabBarHidden)
             case "Space":
                 Text("Space")
             case "Explore":
@@ -22,9 +22,10 @@ struct ContentView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if !isTabBarHidden {       // ✅ CONDITIONAL
-                tabBar
-            }
+            tabBar
+                .offset(y: isTabBarHidden ? 120 : 0)   // ✅ Slide down
+                .opacity(isTabBarHidden ? 0 : 1)       // ✅ Fade out
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isTabBarHidden)
         }
     }
     
