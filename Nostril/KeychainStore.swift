@@ -13,7 +13,7 @@ enum KeychainStore {
     private static let service = Bundle.main.bundleIdentifier ?? "Nostril"
 
     // MARK: - Primary Key (NO Face ID)
-
+    
     static func saveNsec(_ nsec: String) {
         let data = Data(nsec.utf8)
 

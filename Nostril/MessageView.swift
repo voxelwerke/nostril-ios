@@ -6,29 +6,30 @@ struct MessageView: View {
     @Environment(\.datastore) private var datastore
 
     let otherUserPubKey: String
-    let myPubKey: String
 
     @State private var inputText: String = ""
     @FocusState private var isComposerFocused: Bool
 
-    @Query(filter: #Predicate<Message> { _ in true }, sort: [
-        SortDescriptor(\.createdAt, order: .forward)
-    ]) private var messages: [Message]
+    @Query private var messages: [Message]
 
-    init(otherUserPubKey: String, myPubKey: String) {
+    init(otherUserPubKey: String) {
         self.otherUserPubKey = otherUserPubKey
-        self.myPubKey = myPubKey
 
-        let me = myPubKey
+        // We can't access Environment in init,
+        // so we filter only by otherUser here.
         let other = otherUserPubKey
 
         _messages = Query(
-//            filter: #Predicate<Message> { message in
-//                ((message.authorPubKey == me) && (message.otherPubKey == other)) ||
-//                ((message.authorPubKey == other) && (message.otherPubKey == me))
-//            },
+            filter: #Predicate<Message> { message in
+                message.authorPubKey == other ||
+                message.otherPubKey == other
+            },
             sort: [SortDescriptor(\.createdAt, order: .forward)]
         )
+    }
+
+    private var myPubKey: String? {
+        datastore?.npub
     }
 
     private var canSend: Bool {
@@ -39,12 +40,13 @@ struct MessageView: View {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
+        guard let datastore else {
+            print("[MessageView] No shared Datastore found in environment")
+            return
+        }
+
         do {
-            guard let datastore else {
-                print("[MessageView] No shared Datastore found in environment")
-                return
-            }
-            _ = try datastore.publishDirectMessage(to: otherUserPubKey, plaintext: text)
+            try datastore.publishDirectMessage(to: otherUserPubKey, plaintext: text)
             inputText = ""
         } catch {
             print("[MessageView] Error sending via datastore: \(error)")
@@ -69,16 +71,19 @@ struct MessageView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(messages) { message in
-                            MessageBubble(message: message, isMe: message.authorPubKey == myPubKey)
-                                .id(message.id)
-                                .frame(minHeight: 20) 
-                                .padding(.horizontal, 12)
+                            MessageBubble(
+                                message: message,
+                                isMe: message.authorPubKey == myPubKey
+                            )
+                            .id(message.id)
+                            .frame(minHeight: 20)
+                            .padding(.horizontal, 12)
                         }
                     }
                     .padding(.vertical, 8)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .onChange(of: messages.count) { old, new in
+                .onChange(of: messages.count) { _, _ in
                     if let last = messages.last {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
@@ -114,7 +119,6 @@ struct MessageView: View {
             Divider()
 
             HStack(alignment: .bottom, spacing: 10) {
-                // iMessage-ish pill input
                 ZStack(alignment: .leading) {
                     if inputText.isEmpty {
                         Text("iMessage")
@@ -139,14 +143,17 @@ struct MessageView: View {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(Color(.separator).opacity(0.25), lineWidth: 1)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
-                        .background(Circle().fill(canSend ? Color.blue : Color.gray.opacity(0.35)))
+                        .background(
+                            Circle().fill(
+                                canSend ? Color.blue : Color.gray.opacity(0.35)
+                            )
+                        )
                 }
                 .disabled(!canSend)
                 .accessibilityLabel("Send")

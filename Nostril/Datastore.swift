@@ -13,6 +13,8 @@ final class Datastore: NSObject {
     // Persisted identity
     private var keyPair: KeyPair?
 
+    public var npub: String?
+
     // Subscriptions tracking
     private var inboxSubscriptionId: String?
     private var dmRefreshTask: Task<Void, Never>?
@@ -40,17 +42,10 @@ final class Datastore: NSObject {
     private func bootstrapIdentityAndRelays() async {
         let nsec = KeychainStore.loadNsec()
         do {
-            if let nsec, !nsec.isEmpty {
-                try await client.setNsec(nsec)
-                self.keyPair = try KeyPair(nsec: nsec)
-                print("🔑 Loaded identity npub=\(self.keyPair?.npub ?? "-")")
-            } else {
-                let generated = try KeyPair()
-                self.keyPair = generated
-                try await client.setNsec(generated.nsec)
-                KeychainStore.saveNsec(generated.nsec)
-                print("🆕 Generated new identity npub=\(generated.npub)")
-            }
+            try await client.setNsec(nsec!)
+            self.keyPair = try KeyPair(nsec: nsec!)
+            self.npub = self.keyPair!.npub
+            print("🔑 Loaded identity npub=\(self.keyPair?.npub ?? "-")")
         } catch {
             print("❌ Failed to configure identity: \(error)")
         }
