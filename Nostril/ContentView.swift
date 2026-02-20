@@ -3,18 +3,44 @@ import SwiftData
 
 struct ContentView: View {
     @AppStorage("myPubKey") private var myPubKey: String = "my-pubkey-placeholder"
+    @Environment(\.modelContext) private var modelContext
     @State private var showSettings = false
-    @State private var contacts: [String] = ["npub1766yywnsak680dvakg6fpppw8yslq52ukzp7avhnv553t60sa7nq4q0uv3", "npub1nhav4z9efephejdtnf5m7g8472efvwuf2y7m45j84z95d0vaugeshxee04"]
-
+    
+    // Fixed: The Query needs to be properly attached to the property
+    @Query(sort: \Contact.lastMessageDate, order: .reverse) private var contacts: [Contact]
+    
+    // ... inside ContentView struct
+    private func debugPrintContacts() {
+        print("--- 📱 Debug: Contact List (\(contacts.count) found) ---")
+        for contact in contacts {
+            print("""
+            ID: \(contact.id)
+            Pub: \(contact.npub)
+            Unread: \(contact.unreadCount)
+            -------------------------
+            """)
+        }
+    }
+    
     var body: some View {
         NavigationStack {
-            List(contacts, id: \.self) { pub in
+            List(contacts) { contact in
                 NavigationLink {
-                    MessageView(otherUserPubKey: pub, myPubKey: myPubKey)
+                    MessageView(
+                        otherUserPubKey: contact.npub,
+                        myPubKey: myPubKey
+                    )
                 } label: {
-                    ConversationRow(pub: pub, myPubKey: myPubKey)
+                    ConversationRow(
+                        pub: contact.npub,
+                        myPubKey: myPubKey,
+                        unreadCount: contact.unreadCount
+                    )
                 }
                 .listRowInsets(.init(top: 10, leading: 16, bottom: 10, trailing: 16))
+            }
+            .onChange(of: contacts) {
+                debugPrintContacts()
             }
             .listStyle(.plain)
             .navigationTitle("Nostril")
@@ -24,11 +50,18 @@ struct ContentView: View {
                         Image(systemName: "gearshape")
                     }
                     Button {
-                        contacts.append("npub1-\(Int.random(in: 1000...9999))")
+                        // Example: Add a new contact to test the query
+                        let newContact = Contact(npub: "npub1-\(Int.random(in: 1000...9999))")
+                        modelContext.insert(newContact)
                     } label: {
                         Image(systemName: "plus")
                     }
                 }
+            }
+            .onAppear {
+                print("🟢 ContentView Appeared")
+                print("Count is: \(contacts.count)")
+                debugPrintContacts()
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -40,6 +73,7 @@ struct ContentView: View {
 private struct ConversationRow: View {
     let pub: String
     let myPubKey: String
+    let unreadCount: Int
 
     var body: some View {
         HStack(spacing: 12) {
@@ -49,65 +83,79 @@ private struct ConversationRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(pub)
-                    .font(.headline)
+                    .font(Font.headline)
                     .lineLimit(1)
 
-                RecentMessagePreview(otherUserPubKey: pub, myPubKey: myPubKey)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                RecentMessagePreview(
+                    otherUserPubKey: pub,
+                    myPubKey: myPubKey
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 8)
 
-            ConversationTime(otherUserPubKey: pub, myPubKey: myPubKey)
+            VStack(alignment: .trailing, spacing: 6) {
+                ConversationTime(
+                    otherUserPubKey: pub,
+                    myPubKey: myPubKey
+                )
+
+                if unreadCount > 0 {
+                    Text("\(unreadCount)")
+                        .font(.caption2)
+                        .padding(6)
+                        .background(.blue)
+                        .foregroundColor(.white)
+                        .clipShape(Circle())
+                }
+            }
         }
         .contentShape(Rectangle())
     }
 }
 
 private struct RecentMessagePreview: View {
-    let otherUserPubKey: String
-    let myPubKey: String
-
     @Query private var recentMessages: [Message]
 
     init(otherUserPubKey: String, myPubKey: String) {
-        self.otherUserPubKey = otherUserPubKey
-        self.myPubKey = myPubKey
+        // Crucial: Use local constants to feed the Predicate
         let me = myPubKey
         let other = otherUserPubKey
+        
+        let predicate = #Predicate<Message> { message in
+            (message.authorPubKey == me && message.otherPubKey == other) ||
+            (message.authorPubKey == other && message.otherPubKey == me)
+        }
+        
         _recentMessages = Query(
-            filter: #Predicate<Message> { message in
-                ((message.authorPubKey == me) && (message.otherPubKey == other)) ||
-                ((message.authorPubKey == other) && (message.otherPubKey == me))
-            },
+            filter: predicate,
             sort: [SortDescriptor(\.createdAt, order: .reverse)]
         )
     }
 
     var body: some View {
-        Text(recentMessages.first?.content ?? " ")
+        Text(recentMessages.first?.content ?? "No messages yet")
             .lineLimit(1)
             .truncationMode(.tail)
     }
 }
 
 private struct ConversationTime: View {
-    let otherUserPubKey: String
-    let myPubKey: String
-
     @Query private var recentMessages: [Message]
 
     init(otherUserPubKey: String, myPubKey: String) {
-        self.otherUserPubKey = otherUserPubKey
-        self.myPubKey = myPubKey
         let me = myPubKey
         let other = otherUserPubKey
+        
+        let predicate = #Predicate<Message> { message in
+            (message.authorPubKey == me && message.otherPubKey == other) ||
+            (message.authorPubKey == other && message.otherPubKey == me)
+        }
+        
         _recentMessages = Query(
-            filter: #Predicate<Message> { message in
-                ((message.authorPubKey == me) && (message.otherPubKey == other)) ||
-                ((message.authorPubKey == other) && (message.otherPubKey == me))
-            },
+            filter: predicate,
             sort: [SortDescriptor(\.createdAt, order: .reverse)]
         )
     }
@@ -119,9 +167,8 @@ private struct ConversationTime: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         } else {
-            Text(" ")
+            Text("")
                 .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 }

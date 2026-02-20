@@ -16,22 +16,16 @@ final class Datastore: NSObject {
     // Subscriptions tracking
     private var inboxSubscriptionId: String?
 
-    // Default relays (restore if missing)
+    // Default relays
     private static let defaultRelayURLs: [String] = [
         "wss://relay.damus.io"
-  
     ]
-//    private static let defaultRelayURLs: [String] = [
-//        "ws://192.168.1.28:8787"
-//    ]
 
-
-    // MARK: - Init / Deinit
+    // MARK: - Init
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
         super.init()
 
-        // Attempt to load nsec from keychain and configure client
         Task { [weak self] in
             await self?.bootstrapIdentityAndRelays()
         }
@@ -39,49 +33,44 @@ final class Datastore: NSObject {
 
     // MARK: - Bootstrap
     private func bootstrapIdentityAndRelays() async {
-        // Load nsec from your existing keychain helper if available
         let nsec = KeychainStore.loadNsec()
         do {
             if let nsec, !nsec.isEmpty {
                 try await client.setNsec(nsec)
-                print("nsec: \(nsec)")
-                
                 self.keyPair = try KeyPair(nsec: nsec)
-                print("🔑 [Datastore] Loaded identity npub=\(self.keyPair?.npub ?? "-")")
+                print("🔑 Loaded identity npub=\(self.keyPair?.npub ?? "-")")
             } else {
-                // If no key, create one and store it
                 let generated = try KeyPair()
                 self.keyPair = generated
                 try await client.setNsec(generated.nsec)
                 KeychainStore.saveNsec(generated.nsec)
-                print("🆕 [Datastore] Generated new identity npub=\(generated.npub)")
+                print("🆕 Generated new identity npub=\(generated.npub)")
             }
         } catch {
-            print("❌ [Datastore] Failed to configure identity: \(error)")
+            print("❌ Failed to configure identity: \(error)")
         }
 
         do {
             try await client.addRelays(Self.defaultRelayURLs)
             try await client.connect()
-            print("🔌 [Datastore] Connected to default relays")
-
-            // Subscribe to a basic inbox/global feed example
+            print("🔌 Connected to relays")
             try await subscribeToDMS(limit: 50)
         } catch {
-            print("❌ [Datastore] Relay setup/connect failed: \(error)")
+            print("❌ Relay setup/connect failed: \(error)")
         }
     }
 
-    // MARK: - Public API (re-implemented)
+
+    // MARK: - Public API
 
     func connectDefaultRelays() {
         Task {
             do {
                 try await client.addRelays(Self.defaultRelayURLs)
                 try await client.connect()
-                print("🔌 [Datastore] connectDefaultRelays -> connected")
+                print("🔌 connectDefaultRelays -> connected")
             } catch {
-                print("❌ [Datastore] connectDefaultRelays failed: \(error)")
+                print("❌ connectDefaultRelays failed: \(error)")
             }
         }
     }
@@ -89,75 +78,140 @@ final class Datastore: NSObject {
     func publishDirectMessage(to recipientNpub: String, plaintext: String) throws {
         Task {
             do {
-                // Resolve recipient hex pubkey from npub
                 let recipient = try PublicKey(npub: recipientNpub)
-                let recipientHex = recipient.hex
-
-                // Publish a sealed DM (gift-wrapped rumor -> kind 1059) via NostrClient
-                _ = try await client.sendDirectMessage(plaintext, to: recipientHex)
-                print("📤 [Datastore] Sealed DM (1059) published to p=\(recipientNpub)…")
+                _ = try await client.sendDirectMessage(plaintext, to: recipient.hex)
+                print("📤 DM published to \(recipientNpub)")
             } catch {
-                print("❌ [Datastore] Failed to publish sealed DM: \(error)")
+                print("❌ Failed to publish DM: \(error)")
             }
         }
     }
 
-    
-    /// Helper to get the keypair from the signer
+    // MARK: - DM Parsing
+
     private func getKeyPair() throws -> KeyPair {
-        return self.keyPair!
-    }
-    
-    
-    /// Parses a received gift-wrapped direct message
-    /// - Parameter giftWrap: The gift-wrapped event
-    /// - Returns: The parsed DirectMessage
-    public func parseDirectMessage(_ giftWrap: Event) throws -> DirectMessage {
-        guard let keyPair = try? getKeyPair() else {
+        guard let keyPair else {
             throw NostrError.signingFailed
         }
+        return keyPair
+    }
 
-        let parser = DirectMessageParser(keyPair: keyPair)
+    public func parseDirectMessage(_ giftWrap: Event) throws -> DirectMessage {
+        let parser = DirectMessageParser(keyPair: try getKeyPair())
         return try parser.parse(giftWrap)
+    }
+
+    // MARK: - Insert If Needed
+
+    private func insertMessageIfNeeded(
+        id: String,
+        createdAt: Date,
+        content: String,
+        author: String,
+        other: String
+    ) {
+        let descriptor = FetchDescriptor<Message>(
+            predicate: #Predicate { $0.id == id }
+        )
+
+        updateContact(hexPubkey: author, messageDate: createdAt)
+        updateContact(hexPubkey: other, messageDate: createdAt)
+
+        if let existing = try? modelContext.fetch(descriptor),
+           !existing.isEmpty {
+            return
+        }
+
+        let message = Message(
+            id: id,
+            createdAt: createdAt,
+            content: content,
+            authorPubKey: author,
+            otherPubKey: other
+        )
+
+        modelContext.insert(message)
+
+        try? modelContext.save()
+    }
+
+    private func updateContact(hexPubkey: String, messageDate: Date) {
+        guard let npub = try? PublicKey(hex: hexPubkey).npub else {
+            print("Could not get npub from hex: \(hexPubkey)")
+            return
+        }
+
+        let descriptor = FetchDescriptor<Contact>(
+            predicate: #Predicate { $0.npub == npub }
+        )
+
+        if let existing = try? modelContext.fetch(descriptor),
+           let contact = existing.first {
+
+            contact.lastMessageDate = messageDate
+            contact.unreadCount += 1
+
+            print("Increased unread count")
+        } else {
+
+            let contact = Contact(
+                npub: npub,
+                lastMessageDate: messageDate,
+                unreadCount: 1
+            )
+
+            modelContext.insert(contact)
+            
+            print("Inserted new contact")
+        }
     }
     
     // MARK: - Subscriptions
+
     private func subscribeToDMS(limit: Int) async throws {
-        // Subscribe to gift-wrapped direct messages addressed to us, then parse to plaintext and persist
         let subId = try await client.subscribeToDirectMessages(limit: limit) { [weak self] giftWrap in
             guard let self else { return }
-            // Perform async work inside a Task since the API expects a sync callback
+
             Task { [weak self] in
                 guard let self else { return }
-                print("📥 [DM] giftWrap recieved kind=\(giftWrap.kind) id=\(giftWrap.id.prefix(16))…")
 
-                // Hop to the main actor to call main-actor isolated APIs and touch modelContext
+                print("📥 giftWrap received id=\(giftWrap.id.prefix(16))…")
+
                 await MainActor.run {
                     do {
                         let dm = try self.parseDirectMessage(giftWrap)
 
-                        let author = dm.senderPubkey
-                        let other = dm.recipientPubkey
-
-                        let message = Message(
+                        self.insertMessageIfNeeded(
+                            id: giftWrap.id,
                             createdAt: dm.createdAt,
                             content: dm.content,
-                            authorPubKey: author,
-                            otherPubKey: other,
-                            eventID: giftWrap.id
+                            author: dm.senderPubkey,
+                            other: dm.recipientPubkey
                         )
-                        self.modelContext.insert(message)
-                        try self.modelContext.save()
-                        print("💾 [Datastore] Saved DM eventID=\(giftWrap.id.prefix(16))…")
+
+                        print("💾 Saved DM \(giftWrap.id.prefix(16))…")
+
+                    } catch let error as NostrError where error == .hmacVerificationFailed {
+
+                        self.insertMessageIfNeeded(
+                            id: giftWrap.id,
+                            createdAt: Date(),
+                            content: "unable to decode",
+                            author: giftWrap.pubkey,
+                            other: self.keyPair?.publicKeyHex ?? ""
+                        )
+
+                        print("⚠️ HMAC failed — inserted placeholder")
+
                     } catch {
-                        print("❌ [Datastore] Failed to parse/save DM: \(error)")
+                        print("❌ Failed to parse/save DM: \(error)")
                     }
                 }
             }
         }
 
         self.inboxSubscriptionId = subId
-        print("🛰️ [Datastore] Subscribed to DMs via NostrClient subId=\(subId)")
+        print("🛰️ Subscribed to DMs subId=\(subId)")
     }
 }
 

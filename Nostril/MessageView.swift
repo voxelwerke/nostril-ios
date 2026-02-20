@@ -52,6 +52,18 @@ struct MessageView: View {
         }
     }
 
+    private func resetUnread() {
+        let descriptor = FetchDescriptor<Contact>(
+            predicate: #Predicate { $0.npub == otherUserPubKey }
+        )
+
+        if let contacts = try? modelContext.fetch(descriptor),
+           let contact = contacts.first {
+            contact.unreadCount = 0
+            try? modelContext.save()
+        }
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
@@ -91,6 +103,9 @@ struct MessageView: View {
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(canSend ? Color.blue : Color.secondary)
             }
+        }
+        .onAppear {
+            resetUnread()
         }
     }
 
