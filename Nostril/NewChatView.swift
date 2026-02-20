@@ -1,3 +1,11 @@
+//
+//  NewChatView.swift
+//  Nostril
+//
+//  Created by Ben Nolan on 20/02/2026.
+//
+
+
 import SwiftUI
 
 struct NewChatView: View {
