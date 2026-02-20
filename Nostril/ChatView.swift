@@ -11,18 +11,12 @@ import SwiftData
 struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.datastore) private var datastore
-    
     @Query(sort: \Contact.lastMessageDate, order: .reverse) private var contacts: [Contact]
-    
-    private var myPubKey: String? {
-        datastore?.npub
-    }
-    
+        
     var body: some View {
         NavigationStack {
             List {
-                if let myPubKey {
-                    ForEach(contacts.filter { $0.npub != myPubKey }) { contact in
+                    ForEach(contacts) { contact in
                         NavigationLink {
                             MessageView(
                                 otherUserPubKey: contact.npub
@@ -30,16 +24,11 @@ struct ChatView: View {
                         } label: {
                             ConversationRow(
                                 pub: contact.npub,
-                                myPubKey: myPubKey,
                                 unreadCount: contact.unreadCount
                             )
                         }
                         .listRowInsets(.init(top: 10, leading: 16, bottom: 10, trailing: 16))
                     }
-                } else {
-                    ProgressView("Loading identity…")
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
             }
             .listStyle(.plain)
             .navigationTitle("Chat")
@@ -53,7 +42,6 @@ struct ChatView: View {
 
 private struct ConversationRow: View {
     let pub: String
-    let myPubKey: String
     let unreadCount: Int
 
     var body: some View {
@@ -68,8 +56,7 @@ private struct ConversationRow: View {
                     .lineLimit(1)
 
                 RecentMessagePreview(
-                    otherUserPubKey: pub,
-                    myPubKey: myPubKey
+                    otherUserPubKey: pub
                 )
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -79,8 +66,7 @@ private struct ConversationRow: View {
 
             VStack(alignment: .trailing, spacing: 6) {
                 ConversationTime(
-                    otherUserPubKey: pub,
-                    myPubKey: myPubKey
+                    otherUserPubKey: pub
                 )
 
                 if unreadCount > 0 {
@@ -100,13 +86,12 @@ private struct ConversationRow: View {
 private struct RecentMessagePreview: View {
     @Query private var recentMessages: [Message]
 
-    init(otherUserPubKey: String, myPubKey: String) {
-        let me = myPubKey
+    init(otherUserPubKey: String) {
         let other = otherUserPubKey
         
         let predicate = #Predicate<Message> { message in
-            (message.authorPubKey == me && message.otherPubKey == other) ||
-            (message.authorPubKey == other && message.otherPubKey == me)
+            (message.otherPubKey == other) ||
+            (message.authorPubKey == other)
         }
         
         _recentMessages = Query(
@@ -125,13 +110,12 @@ private struct RecentMessagePreview: View {
 private struct ConversationTime: View {
     @Query private var recentMessages: [Message]
 
-    init(otherUserPubKey: String, myPubKey: String) {
-        let me = myPubKey
+    init(otherUserPubKey: String) {
         let other = otherUserPubKey
         
         let predicate = #Predicate<Message> { message in
-            (message.authorPubKey == me && message.otherPubKey == other) ||
-            (message.authorPubKey == other && message.otherPubKey == me)
+            (message.otherPubKey == other) ||
+            (message.authorPubKey == other )
         }
         
         _recentMessages = Query(
