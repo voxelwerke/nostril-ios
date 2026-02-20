@@ -25,8 +25,6 @@ final class Datastore: NSObject {
 //        "ws://192.168.1.28:8787"
 //    ]
 
-    // Keep-alive timer
-    private var keepAliveTimer: Timer?
 
     // MARK: - Init / Deinit
     init(modelContext: ModelContext) {
@@ -37,12 +35,6 @@ final class Datastore: NSObject {
         Task { [weak self] in
             await self?.bootstrapIdentityAndRelays()
         }
-
-        startKeepAliveTimer()
-    }
-
-    deinit {
-        keepAliveTimer?.invalidate()
     }
 
     // MARK: - Bootstrap
@@ -52,6 +44,8 @@ final class Datastore: NSObject {
         do {
             if let nsec, !nsec.isEmpty {
                 try await client.setNsec(nsec)
+                print("nsec: \(nsec)")
+                
                 self.keyPair = try KeyPair(nsec: nsec)
                 print("🔑 [Datastore] Loaded identity npub=\(self.keyPair?.npub ?? "-")")
             } else {
@@ -72,31 +66,9 @@ final class Datastore: NSObject {
             print("🔌 [Datastore] Connected to default relays")
 
             // Subscribe to a basic inbox/global feed example
-            try await subscribeToDMS(limit: 10)
+            try await subscribeToDMS(limit: 50)
         } catch {
             print("❌ [Datastore] Relay setup/connect failed: \(error)")
-        }
-    }
-
-    // MARK: - Keep Alive
-    private func startKeepAliveTimer() {
-        keepAliveTimer?.invalidate()
-        keepAliveTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
-            Task { await self?.sendKeepAliveNote() }
-        }
-        if let timer = keepAliveTimer {
-            RunLoop.main.add(timer, forMode: .common)
-        }
-        print("⏱️ [Datastore] Keep-alive timer started")
-    }
-
-    private func sendKeepAliveNote() async {
-        guard let _ = keyPair else { return }
-        do {
-            let event = try await client.publishTextNote(content: "ping")
-            print("📡 [Datastore] Keep-alive note id=\(event.id)")
-        } catch {
-            print("⚠️ [Datastore] Keep-alive failed: \(error)")
         }
     }
 
@@ -130,28 +102,40 @@ final class Datastore: NSObject {
         }
     }
 
+    
+    /// Helper to get the keypair from the signer
+    private func getKeyPair() throws -> KeyPair {
+        return self.keyPair!
+    }
+    
+    
+    /// Parses a received gift-wrapped direct message
+    /// - Parameter giftWrap: The gift-wrapped event
+    /// - Returns: The parsed DirectMessage
+    public func parseDirectMessage(_ giftWrap: Event) throws -> DirectMessage {
+        guard let keyPair = try? getKeyPair() else {
+            throw NostrError.signingFailed
+        }
+
+        let parser = DirectMessageParser(keyPair: keyPair)
+        return try parser.parse(giftWrap)
+    }
+    
     // MARK: - Subscriptions
     private func subscribeToDMS(limit: Int) async throws {
         // Subscribe to gift-wrapped direct messages addressed to us, then parse to plaintext and persist
         let subId = try await client.subscribeToDirectMessages(limit: limit) { [weak self] giftWrap in
             guard let self else { return }
-            print("📥 [DM] giftWrap kind=\(giftWrap.kind) id=\(giftWrap.id.prefix(16))…")
+            // Perform async work inside a Task since the API expects a sync callback
+            Task { [weak self] in
+                guard let self else { return }
+                print("📥 [DM] giftWrap recieved kind=\(giftWrap.kind) id=\(giftWrap.id.prefix(16))…")
 
-            Task { @MainActor in
-                do {
-                    print("dm sender=\(giftWrap.pubkey) to=\(giftWrap.tags) my npub=\(self.keyPair!.npub)")
+                // Hop to the main actor to call main-actor isolated APIs and touch modelContext
+                await MainActor.run {
+                    do {
+                        let dm = try self.parseDirectMessage(giftWrap)
 
-                    // Parse to DirectMessage (plaintext + metadata)
-                    let dm = try await self.client.parseDirectMessage(giftWrap)
-
-                    // Upsert by eventID (string), not by UUID id
-                    let fetch = FetchDescriptor<Message>(
-                        predicate: #Predicate { $0.eventID == giftWrap.id }
-                    )
-                    let existing = try self.modelContext.fetch(fetch)
-
-                    if existing.isEmpty {
-                        // Build author/other pubkeys depending on direction
                         let author = dm.senderPubkey
                         let other = dm.recipientPubkey
 
@@ -165,13 +149,9 @@ final class Datastore: NSObject {
                         self.modelContext.insert(message)
                         try self.modelContext.save()
                         print("💾 [Datastore] Saved DM eventID=\(giftWrap.id.prefix(16))…")
-                    } else {
-                        // Optional: update existing with any new fields
-                        // existing[0].content = dm.content
-                        // try self.modelContext.save()
+                    } catch {
+                        print("❌ [Datastore] Failed to parse/save DM: \(error)")
                     }
-                } catch {
-                    print("❌ [Datastore] Failed to parse/save DM: \(error)")
                 }
             }
         }

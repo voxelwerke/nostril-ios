@@ -4,7 +4,7 @@ import SwiftData
 struct ContentView: View {
     @AppStorage("myPubKey") private var myPubKey: String = "my-pubkey-placeholder"
     @State private var showSettings = false
-    @State private var contacts: [String] = ["npub1766yywnsak680dvakg6fpppw8yslq52ukzp7avhnv553t60sa7nq4q0uv3", "npub1-alice", "npub1-bob", "npub1-carol"]
+    @State private var contacts: [String] = ["npub1766yywnsak680dvakg6fpppw8yslq52ukzp7avhnv553t60sa7nq4q0uv3", "npub1nhav4z9efephejdtnf5m7g8472efvwuf2y7m45j84z95d0vaugeshxee04"]
 
     var body: some View {
         NavigationStack {
