@@ -14,6 +14,7 @@ final class Datastore: NSObject {
     private var keyPair: KeyPair?
 
     public var npub: String?
+    public var hex: String?
 
     // Subscriptions tracking
     private var inboxSubscriptionId: String?
@@ -64,6 +65,8 @@ final class Datastore: NSObject {
             try await client.setNsec(nsec!)
             self.keyPair = try KeyPair(nsec: nsec!)
             self.npub = self.keyPair!.npub
+            self.hex = self.keyPair!.publicKeyHex
+            
             print("🔑 Loaded identity npub=\(self.keyPair?.npub ?? "-")")
         } catch {
             print("❌ Failed to configure identity: \(error)")
@@ -140,7 +143,7 @@ final class Datastore: NSObject {
                         id: event.id,
                         createdAt: Date(),
                         content: plaintext,
-                        sender: self.keyPair?.publicKeyHex ?? "",
+                        sender: self.keyPair!.publicKeyHex,
                         recipient: recipient.hex
                     )
                 }
@@ -179,7 +182,7 @@ final class Datastore: NSObject {
             predicate: #Predicate { $0.id == id }
         )
 
-        let selfPost = self.keyPair!.npub == sender
+        let selfPost = self.keyPair!.publicKeyHex == sender
         let chatKey = selfPost ? recipient : sender
         
         if let existing = try? modelContext.fetch(descriptor), !existing.isEmpty {

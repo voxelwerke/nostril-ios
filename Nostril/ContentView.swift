@@ -6,21 +6,32 @@ struct ContentView: View {
     @Environment(\.datastore) private var datastore
     
     @State private var showSettings = false
-    @State private var selectedTab: String = "Chat" // Track the selection
+    @State private var selectedTab: String = "Chat"
+    
+    // ✅ Navigation state (Messages-style)
+    @State private var path = NavigationPath()
     
     @Query(sort: \Contact.lastMessageDate, order: .reverse) private var contacts: [Contact]
     
     private var myPubKey: String? {
         datastore?.npub
     }
+    
+    // ✅ Hide when pushed
+    private var isTabBarHidden: Bool {
+        !path.isEmpty
+    }
         
     var body: some View {
         ZStack(alignment: .bottom) {
-            ChatView()
-                        
-            // The Floating Tab Bar
+            
+            // ✅ NavigationStack owned here
+            NavigationStack(path: $path) {
+                ChatView(path: $path)
+            }
+            
+            // Floating Tab Bar
             HStack(spacing: 15) {
-                // Main Pill
                 HStack(spacing: 0) {
                     TabButton(title: "Chat", selection: $selectedTab)
                     TabButton(title: "Space", selection: $selectedTab)
@@ -30,9 +41,11 @@ struct ContentView: View {
                 .background(.ultraThinMaterial)
                 .clipShape(Capsule())
                 .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
-                
             }
-            .padding(.bottom, 20) // Floating distance from bottom
+            .padding(.bottom, 20)
+            .offset(y: isTabBarHidden ? 140 : 0)     // ✅ slide down
+            .opacity(isTabBarHidden ? 0 : 1)
+            .animation(.easeInOut(duration: 0.25), value: isTabBarHidden)
         }
     }
 }
@@ -49,7 +62,11 @@ struct TabButton: View {
                 .font(.system(size: 16, weight: .medium))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(selection == title ? AnyView(Capsule().fill(.white.opacity(0.2))) : AnyView(EmptyView()))
+                .background(
+                    selection == title
+                    ? AnyView(Capsule().fill(.white.opacity(0.2)))
+                    : AnyView(EmptyView())
+                )
                 .foregroundColor(.primary)
         }
     }

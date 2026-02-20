@@ -7,35 +7,38 @@
 
 import SwiftUI
 import SwiftData
+import NostrClient
 
 struct ChatView: View {
+    @Binding var path: NavigationPath
     @Environment(\.modelContext) private var modelContext
     @Environment(\.datastore) private var datastore
     @Query(sort: \Contact.lastMessageDate, order: .reverse) private var contacts: [Contact]
         
     var body: some View {
-        NavigationStack {
-            List {
-                    ForEach(contacts) { contact in
-                        NavigationLink {
-                            MessageView(
-                                npub: contact.npub
-                            )
-                        } label: {
-                            ConversationRow(
-                                pub: contact.npub,
-                                unreadCount: contact.unreadCount
-                            )
-                        }
-                        .listRowInsets(.init(top: 10, leading: 16, bottom: 10, trailing: 16))
-                    }
+        List {
+            ForEach(contacts) { contact in
+                Button {
+                    // ✅ Push onto parent path
+                    path.append(contact.npub)
+                } label: {
+                    ConversationRow(
+                        pub: contact.npub,
+                        unreadCount: contact.unreadCount
+                    )
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(.init(top: 10, leading: 16, bottom: 10, trailing: 16))
             }
-            .listStyle(.plain)
-            .navigationTitle("Chat")
+        }
+        .listStyle(.plain)
+        .navigationTitle("Chat")
+        .navigationDestination(for: String.self) { npub in
+            MessageView(npub: npub)
         }
     }
 }
-    
+
     
 
 
@@ -56,7 +59,7 @@ private struct ConversationRow: View {
                     .lineLimit(1)
 
                 RecentMessagePreview(
-                    chatKey: pub
+                    npub: pub
                 )
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -66,7 +69,7 @@ private struct ConversationRow: View {
 
             VStack(alignment: .trailing, spacing: 6) {
                 ConversationTime(
-                    chatKey: pub
+                    npub: pub
                 )
 
                 if unreadCount > 0 {
@@ -86,7 +89,8 @@ private struct ConversationRow: View {
 private struct RecentMessagePreview: View {
     @Query private var recentMessages: [Message]
 
-    init(chatKey: String) {
+    init(npub: String) {
+        let chatKey = try! PublicKey(npub: npub).hex
         
         let predicate = #Predicate<Message> { message in
             (message.chatKey == chatKey)
@@ -108,7 +112,9 @@ private struct RecentMessagePreview: View {
 private struct ConversationTime: View {
     @Query private var recentMessages: [Message]
 
-    init(chatKey: String) {
+    init(npub: String) {
+        let chatKey = try! PublicKey(npub: npub).hex
+        
         let predicate = #Predicate<Message> { message in
             (message.chatKey == chatKey)
         }

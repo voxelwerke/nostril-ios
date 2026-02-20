@@ -7,6 +7,7 @@ struct MessageView: View {
     @Environment(\.datastore) private var datastore
 
     let chatKey: String
+    let npub: String
     
     @State private var inputText: String = ""
     @FocusState private var isComposerFocused: Bool
@@ -18,6 +19,9 @@ struct MessageView: View {
         // Convert npub to a chatKey (hex)
         self.chatKey = try! PublicKey(npub: npub).hex
         
+        // Use npub
+        self.npub = npub
+        
         _messages = Query(
             filter: #Predicate<Message> { message in
                 message.chatKey == chatKey
@@ -27,11 +31,11 @@ struct MessageView: View {
     }
 
     private var recipient: String {
-        self.chatKey
+        self.npub
     }
     
     private var myPubKey: String? {
-        datastore?.npub
+        datastore?.hex
     }
 
     private var canSend: Bool {
@@ -100,7 +104,7 @@ struct MessageView: View {
         .safeAreaInset(edge: .bottom) {
             composer
         }
-        .navigationTitle("\(chatKey.prefix(8))...")
+        .navigationTitle("\(npub.prefix(8))...")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
