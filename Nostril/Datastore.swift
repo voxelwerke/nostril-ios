@@ -10,166 +10,267 @@ final class Datastore: NSObject {
     // MARK: - Nostr Client
     private let client = NostrClient()
 
-    // Persisted identity
     private var keyPair: KeyPair?
 
     public var npub: String?
     public var hex: String?
 
-    // Subscriptions tracking
     private var inboxSubscriptionId: String?
     private var dmRefreshTask: Task<Void, Never>?
 
-    // Default relays
     private static let defaultRelayURLs: [String] = [
         "wss://relay.damus.io"
     ]
 
     // MARK: - Init
+
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
         super.init()
 
         Task { [weak self] in
-            // Delete all messages (so we can backfill)
-//            await self?.truncateMessages()
-
             await self?.bootstrapIdentityAndRelays()
-            
         }
     }
 
     deinit {
         dmRefreshTask?.cancel()
     }
-    
-    private func truncateMessages() async {
-    let descriptor = FetchDescriptor<Message>()
-    
-    do {
-        let messages = try modelContext.fetch(descriptor)
-        for message in messages {
-            modelContext.delete(message)
-        }
-        try modelContext.save()
-        print("🗑️ Truncated \(messages.count) messages")
-    } catch {
-        print("❌ Failed to truncate messages: \(error)")
-    }
-}
 
     // MARK: - Bootstrap
+
     private func bootstrapIdentityAndRelays() async {
-        let nsec = KeychainStore.loadNsec()
+        guard let nsec = KeychainStore.loadNsec() else { return }
+
         do {
-            try await client.setNsec(nsec!)
-            self.keyPair = try KeyPair(nsec: nsec!)
-            self.npub = self.keyPair!.npub
-            self.hex = self.keyPair!.publicKeyHex
-            
-            print("🔑 Loaded identity npub=\(self.keyPair?.npub ?? "-")")
+            try await client.setNsec(nsec)
+            self.keyPair = try KeyPair(nsec: nsec)
+            self.npub = keyPair?.npub
+            self.hex = keyPair?.publicKeyHex
+            print("🔑 Loaded identity \(self.npub ?? "")")
         } catch {
-            print("❌ Failed to configure identity: \(error)")
+            print("❌ Identity setup failed: \(error)")
         }
 
         do {
             try await client.addRelays(Self.defaultRelayURLs)
             try await client.connect()
-            print("🔌 Connected to relays")
-
             restartDMSubscriptionLoop()
-
         } catch {
-            print("❌ Relay setup/connect failed: \(error)")
+            print("❌ Relay connection failed: \(error)")
         }
     }
 
-    // MARK: - DM Subscription Loop
+    // MARK: - Public DM Send
+
+    func publishDirectMessage(to recipientNpub: String, plaintext: String) {
+        Task {
+            do {
+                let recipient = try PublicKey(npub: recipientNpub)
+                let event = try await client.sendDirectMessage(
+                    plaintext,
+                    to: recipient.hex
+                )
+
+                self.insertMessage(
+                    id: event.id,
+                    createdAt: Date(),
+                    content: plaintext,
+                    sender: self.keyPair!.publicKeyHex,
+                    recipient: recipient.hex
+                )
+
+                print("📤 DM sent")
+            } catch {
+                print("❌ DM send failed: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Tapbacks
+
+    func sendReaction(
+        emoji: String,
+        to recipientHex: String,
+        reactingTo messageId: String
+    ) {
+        Task {
+            guard let keyPair else { return }
+
+            let senderHex = keyPair.publicKeyHex
+
+            let descriptor = FetchDescriptor<Reaction>(
+                predicate: #Predicate {
+                    $0.targetMessageId == messageId &&
+                    $0.sender == senderHex
+                }
+            )
+
+            let existing = try? modelContext.fetch(descriptor)
+            let existingReaction = existing?.first
+
+            if let existingReaction, existingReaction.emoji == emoji {
+                modelContext.delete(existingReaction)
+                try? modelContext.save()
+                print("↩️ Tapback removed")
+                return
+            }
+
+            if let existingReaction {
+                modelContext.delete(existingReaction)
+            }
+
+            do {
+                let payload = EncryptedReactionPayload(
+                    emoji: emoji,
+                    targetEventId: messageId,
+                    recipientPubkey: recipientHex
+                )
+
+                let data = try JSONEncoder().encode(payload)
+                let json = String(decoding: data, as: UTF8.self)
+
+                let giftWrap = try await client.sendDirectMessage(
+                    json,
+                    to: recipientHex
+                )
+
+                let reaction = Reaction(
+                    id: giftWrap.id,
+                    targetMessageId: messageId,
+                    emoji: emoji,
+                    sender: senderHex,
+                    recipient: recipientHex,
+                    createdAt: Date()
+                )
+
+                modelContext.insert(reaction)
+                try? modelContext.save()
+
+                print("✅ Tapback sent")
+            } catch {
+                print("❌ Tapback failed: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Subscription Loop
 
     private func restartDMSubscriptionLoop() {
-        // Cancel previous loop
         dmRefreshTask?.cancel()
 
         dmRefreshTask = Task { [weak self] in
             guard let self else { return }
 
             while !Task.isCancelled {
-                do {
-                    try await self.resubscribeToDMs()
-                } catch {
-                    print("❌ Resubscribe failed: \(error)")
-                }
-
+                try? await self.resubscribeToDMs()
                 try? await Task.sleep(for: .seconds(30))
             }
         }
     }
 
     private func resubscribeToDMs() async throws {
-        // Kill previous subscription if it exists
         if let subId = inboxSubscriptionId {
             await client.unsubscribe(subscriptionId: subId)
-            inboxSubscriptionId = nil
-            print("♻️ Unsubscribed previous DM subscription")
         }
 
-        let subId = try await subscribeToDMS(limit: 5)
-        inboxSubscriptionId = subId
-        print("🛰️ Subscribed to DMs subId=\(subId)")
+        inboxSubscriptionId = try await subscribeToDMS(limit: 50)
     }
 
-    // MARK: - Public API
+    // MARK: - Subscribe To DMs
 
-    func connectDefaultRelays() {
-        Task {
-            do {
-                try await client.addRelays(Self.defaultRelayURLs)
-                try await client.connect()
-                print("🔌 connectDefaultRelays -> connected")
-            } catch {
-                print("❌ connectDefaultRelays failed: \(error)")
-            }
-        }
-    }
+    private func subscribeToDMS(limit: Int) async throws -> String {
+        try await client.subscribeToDirectMessages(limit: limit) { [weak self] giftWrap in
+            guard let self else { return }
 
-    func publishDirectMessage(to recipientNpub: String, plaintext: String) throws {
-        Task {
-            do {
-                let recipient = try PublicKey(npub: recipientNpub)
-                let event = try await client.sendDirectMessage(plaintext, to: recipient.hex)
+            Task {
+                do {
+                    // ✅ Call actor-isolated method correctly
+                    let dm = try await self.client.parseDirectMessage(giftWrap)
 
-                await MainActor.run {
-                    self.insertMessage(
-                        id: event.id,
-                        createdAt: Date(),
-                        content: plaintext,
-                        sender: self.keyPair!.publicKeyHex,
-                        recipient: recipient.hex
-                    )
+                    await MainActor.run {
+
+                        // ✅ Reaction decode first
+                        if let data = dm.content.data(using: .utf8),
+                           let payload = try? JSONDecoder().decode(EncryptedReactionPayload.self, from: data),
+                           payload.kind == 7,
+                           let targetId = payload.targetEventId {
+
+                            self.handleIncomingReaction(
+                                giftWrap: giftWrap,
+                                dm: dm,
+                                payload: payload,
+                                targetId: targetId
+                            )
+                            return
+                        }
+
+                        // ✅ Normal DM
+                        self.insertMessage(
+                            id: giftWrap.id,
+                            createdAt: dm.createdAt,
+                            content: dm.content,
+                            sender: dm.senderPubkey,
+                            recipient: dm.recipientPubkey
+                        )
+                    }
+
+                } catch {
+                    print("❌ DM parse failed: \(error)")
                 }
-
-                print("📤 DM published and saved locally")
-            } catch {
-                print("❌ Failed to publish DM: \(error)")
             }
         }
     }
 
-    // MARK: - DM Parsing
+    // MARK: - Incoming Tapback Handler
 
-    private func getKeyPair() throws -> KeyPair {
-        guard let keyPair else {
-            throw NostrError.signingFailed
+    private func handleIncomingReaction(
+        giftWrap: Event,
+        dm: DirectMessage,
+        payload: EncryptedReactionPayload,
+        targetId: String
+    ) {
+        let senderHex = dm.senderPubkey
+
+        let descriptor = FetchDescriptor<Reaction>(
+            predicate: #Predicate {
+                $0.targetMessageId == targetId &&
+                $0.sender == senderHex
+            }
+        )
+
+        let existing = try? modelContext.fetch(descriptor)
+        let existingReaction = existing?.first
+
+        if let existingReaction,
+           existingReaction.emoji == payload.content {
+
+            modelContext.delete(existingReaction)
+            try? modelContext.save()
+            print("↩️ Remote tapback removed")
+            return
         }
-        return keyPair
+
+        if let existingReaction {
+            modelContext.delete(existingReaction)
+        }
+
+        let reaction = Reaction(
+            id: giftWrap.id,
+            targetMessageId: targetId,
+            emoji: payload.content,
+            sender: senderHex,
+            recipient: dm.recipientPubkey,
+            createdAt: dm.createdAt
+        )
+
+        modelContext.insert(reaction)
+        try? modelContext.save()
+
+        print("❤️ Remote tapback applied")
     }
 
-    public func parseDirectMessage(_ giftWrap: Event) throws -> DirectMessage {
-        let parser = DirectMessageParser(keyPair: try getKeyPair())
-        return try parser.parse(giftWrap)
-    }
-
-    // MARK: - Insert If Needed
+    // MARK: - Insert Message
 
     private func insertMessage(
         id: String,
@@ -182,18 +283,12 @@ final class Datastore: NSObject {
             predicate: #Predicate { $0.id == id }
         )
 
-        let selfPost = self.keyPair!.publicKeyHex == sender
-        let chatKey = selfPost ? recipient : sender
-        
-        if let existing = try? modelContext.fetch(descriptor), !existing.isEmpty {
-            
-            print("👉 Skipped existing DM \(id.prefix(16))…")
+        if let existing = try? modelContext.fetch(descriptor),
+           !existing.isEmpty {
             return
         }
 
-        if !selfPost {
-            updateContact(hexPubkey: sender, messageDate: createdAt)
-        }
+        let chatKey = sender == keyPair?.publicKeyHex ? recipient : sender
 
         let message = Message(
             id: id,
@@ -206,83 +301,5 @@ final class Datastore: NSObject {
 
         modelContext.insert(message)
         try? modelContext.save()
-        
-        print("💾 Saved DM \(id.prefix(16))…")
-    }
-
-    private func updateContact(hexPubkey: String, messageDate: Date) {
-        guard let npub = try? PublicKey(hex: hexPubkey).npub else {
-            print("Could not get npub from hex: \(hexPubkey)")
-            return
-        }
-
-        let descriptor = FetchDescriptor<Contact>(
-            predicate: #Predicate { $0.npub == npub }
-        )
-
-        if let existing = try? modelContext.fetch(descriptor),
-           let contact = existing.first {
-
-            contact.lastMessageDate = messageDate
-            contact.unreadCount += 1
-            print("Increased unread count")
-
-        } else {
-
-            let contact = Contact(
-                npub: npub,
-                lastMessageDate: messageDate,
-                unreadCount: 1
-            )
-
-            modelContext.insert(contact)
-            print("Inserted new contact")
-        }
-    }
-
-    // MARK: - Subscriptions
-
-    private func subscribeToDMS(limit: Int) async throws -> String {
-        try await client.subscribeToDirectMessages(limit: limit) { [weak self] giftWrap in
-            guard let self else { return }
-
-            Task { [weak self] in
-                guard let self else { return }
-
-                print("📥 giftWrap received id=\(giftWrap.id.prefix(16))…")
-
-                await MainActor.run {
-                    do {
-                        let dm = try self.parseDirectMessage(giftWrap)
-                        
-                        self.insertMessage(
-                            id: giftWrap.id,
-                            createdAt: dm.createdAt,
-                            content: dm.content,
-                            sender: dm.senderPubkey,
-                            recipient: dm.recipientPubkey
-                        )
-
-                    } catch let error as NostrError where error == .hmacVerificationFailed {
-
-                        self.insertMessage(
-                            id: giftWrap.id,
-                            createdAt: Date(),
-                            content: "unable to decode",
-                            sender: giftWrap.pubkey,
-                            recipient: self.keyPair!.publicKeyHex
-                        )
-
-//                        print("⚠️ HMAC failed — inserted placeholder")
-
-                    } catch {
-                        print("❌ Failed to parse/save DM: \(error)")
-                    }
-
-                    try? self.modelContext.save()
-                }
-            }
-        }
     }
 }
-
