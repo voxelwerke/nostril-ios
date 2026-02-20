@@ -106,15 +106,6 @@ struct MessageView: View {
         }
         .navigationTitle("\(npub.prefix(8))...")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Send") { sendMessage() }
-                    .disabled(!canSend)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(canSend ? Color.blue : Color.secondary)
-            }
-        }
         .onAppear {
             resetUnread()
         }
@@ -127,7 +118,7 @@ struct MessageView: View {
             HStack(alignment: .bottom, spacing: 10) {
                 ZStack(alignment: .leading) {
                     if inputText.isEmpty {
-                        Text("iMessage")
+                        Text("Message")
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
@@ -135,8 +126,8 @@ struct MessageView: View {
 
                     TextField("", text: $inputText, axis: .vertical)
                         .focused($isComposerFocused)
+                        .toolbar(.hidden)
                         .lineLimit(1...6)
-                        .submitLabel(.send)
                         .onSubmit { sendMessage() }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
