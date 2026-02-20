@@ -8,20 +8,23 @@ final class Message {
     
     var createdAt: Date
     var content: String
-    var authorPubKey: String
-    var otherPubKey: String
+    var sender: String
+    var recipient: String
+    var chatKey: String
 
     init(
         id: String,
         createdAt: Date = Date(),
         content: String,
-        authorPubKey: String,
-        otherPubKey: String
+        sender: String,
+        recipient: String,
+        chatKey: String
     ) {
         self.id = id
         self.createdAt = createdAt
         self.content = content
-        self.authorPubKey = authorPubKey
-        self.otherPubKey = otherPubKey
+        self.sender = sender
+        self.recipient = recipient
+        self.chatKey = chatKey
     }
 }

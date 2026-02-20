@@ -117,12 +117,12 @@ final class Datastore: NSObject {
                 let event = try await client.sendDirectMessage(plaintext, to: recipient.hex)
 
                 await MainActor.run {
-                    self.insertMessageIfNeeded(
+                    self.insertMessage(
                         id: event.id,
                         createdAt: Date(),
                         content: plaintext,
-                        author: self.keyPair?.publicKeyHex ?? "",
-                        other: recipient.hex
+                        sender: self.keyPair?.publicKeyHex ?? "",
+                        recipient: recipient.hex
                     )
                 }
 
@@ -149,31 +149,35 @@ final class Datastore: NSObject {
 
     // MARK: - Insert If Needed
 
-    private func insertMessageIfNeeded(
+    private func insertMessage(
         id: String,
         createdAt: Date,
         content: String,
-        author: String,
-        other: String
+        sender: String,
+        recipient: String
     ) {
         let descriptor = FetchDescriptor<Message>(
             predicate: #Predicate { $0.id == id }
         )
 
-        updateContact(hexPubkey: author, messageDate: createdAt)
-        updateContact(hexPubkey: other, messageDate: createdAt)
-
-        if let existing = try? modelContext.fetch(descriptor),
-           !existing.isEmpty {
+        let selfPost = self.keyPair!.npub == sender
+        let chatKey = selfPost ? recipient : sender
+        
+        if let existing = try? modelContext.fetch(descriptor), !existing.isEmpty {
             return
+        }
+
+        if !selfPost {
+            updateContact(hexPubkey: sender, messageDate: createdAt)
         }
 
         let message = Message(
             id: id,
             createdAt: createdAt,
             content: content,
-            authorPubKey: author,
-            otherPubKey: other
+            sender: sender,
+            recipient: recipient,
+            chatKey: chatKey
         )
 
         modelContext.insert(message)
@@ -224,25 +228,25 @@ final class Datastore: NSObject {
                 await MainActor.run {
                     do {
                         let dm = try self.parseDirectMessage(giftWrap)
-
-                        self.insertMessageIfNeeded(
+                        
+                        self.insertMessage(
                             id: giftWrap.id,
                             createdAt: dm.createdAt,
                             content: dm.content,
-                            author: dm.senderPubkey,
-                            other: dm.recipientPubkey
+                            sender: dm.senderPubkey,
+                            recipient: dm.recipientPubkey
                         )
 
                         print("💾 Saved DM \(giftWrap.id.prefix(16))…")
 
                     } catch let error as NostrError where error == .hmacVerificationFailed {
 
-                        self.insertMessageIfNeeded(
+                        self.insertMessage(
                             id: giftWrap.id,
                             createdAt: Date(),
                             content: "unable to decode",
-                            author: giftWrap.pubkey,
-                            other: self.keyPair?.publicKeyHex ?? ""
+                            sender: giftWrap.pubkey,
+                            recipient: self.keyPair!.publicKeyHex
                         )
 
                         print("⚠️ HMAC failed — inserted placeholder")
