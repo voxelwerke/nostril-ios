@@ -5,48 +5,38 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.datastore) private var datastore
     
-    @State private var showSettings = false
     @State private var selectedTab: String = "Chat"
     
-    // ✅ Navigation state (Messages-style)
-    @State private var path = NavigationPath()
-    
-    @Query(sort: \Contact.lastMessageDate, order: .reverse) private var contacts: [Contact]
-    
-    private var myPubKey: String? {
-        datastore?.npub
-    }
-    
-    // ✅ Hide when pushed
-    private var isTabBarHidden: Bool {
-        !path.isEmpty
-    }
-        
     var body: some View {
-        ZStack(alignment: .bottom) {
-            
-            // ✅ NavigationStack owned here
-            NavigationStack(path: $path) {
-                ChatView(path: $path)
+        Group {
+            switch selectedTab {
+            case "Chat":
+                ChatView()
+            case "Space":
+                Text("Space")
+            case "Explore":
+                Text("Explore")
+            default:
+                ChatView()
             }
-            
-            // Floating Tab Bar
-            HStack(spacing: 15) {
-                HStack(spacing: 0) {
-                    TabButton(title: "Chat", selection: $selectedTab)
-                    TabButton(title: "Space", selection: $selectedTab)
-                    TabButton(title: "Explore", selection: $selectedTab)
-                }
-                .padding(8)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-                .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
-            }
-            .padding(.bottom, 20)
-            .offset(y: isTabBarHidden ? 140 : 0)     // ✅ slide down
-            .opacity(isTabBarHidden ? 0 : 1)
-            .animation(.easeInOut(duration: 0.25), value: isTabBarHidden)
         }
+        .safeAreaInset(edge: .bottom) {
+            tabBar
+        }
+    }
+    
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            TabButton(title: "Chat", selection: $selectedTab)
+            TabButton(title: "Space", selection: $selectedTab)
+            TabButton(title: "Explore", selection: $selectedTab)
+        }
+        .padding(8)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.1), radius: 10, y: 5)
+        .padding(.horizontal)
+        .padding(.top, 8)
     }
 }
 
@@ -64,8 +54,8 @@ struct TabButton: View {
                 .padding(.vertical, 12)
                 .background(
                     selection == title
-                    ? AnyView(Capsule().fill(.white.opacity(0.2)))
-                    : AnyView(EmptyView())
+                    ? Capsule().fill(.white.opacity(0.2))
+                    : nil
                 )
                 .foregroundColor(.primary)
         }

@@ -126,7 +126,6 @@ struct MessageView: View {
 
                     TextField("", text: $inputText, axis: .vertical)
                         .focused($isComposerFocused)
-                        .toolbar(.hidden)
                         .lineLimit(1...6)
                         .onSubmit { sendMessage() }
                         .padding(.horizontal, 14)

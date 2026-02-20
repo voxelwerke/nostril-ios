@@ -10,38 +10,35 @@ import SwiftData
 import NostrClient
 
 struct ChatView: View {
-    @Binding var path: NavigationPath
+    @State private var path = NavigationPath()
     @Environment(\.modelContext) private var modelContext
     @Environment(\.datastore) private var datastore
     @Query(sort: \Contact.lastMessageDate, order: .reverse) private var contacts: [Contact]
         
     var body: some View {
-        List {
-            ForEach(contacts) { contact in
-                Button {
-                    // ✅ Push onto parent path
-                    path.append(contact.npub)
-                } label: {
-                    ConversationRow(
-                        pub: contact.npub,
-                        unreadCount: contact.unreadCount
-                    )
+        NavigationStack(path: $path) {
+            List {
+                ForEach(contacts) { contact in
+                    Button {
+                        path.append(contact.npub)
+                    } label: {
+                        ConversationRow(
+                            pub: contact.npub,
+                            unreadCount: contact.unreadCount
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowInsets(.init(top: 10, leading: 16, bottom: 10, trailing: 16))
                 }
-                .buttonStyle(.plain)
-                .listRowInsets(.init(top: 10, leading: 16, bottom: 10, trailing: 16))
             }
-        }
-        .listStyle(.plain)
-        .navigationTitle("Chat")
-        .navigationDestination(for: String.self) { npub in
-            MessageView(npub: npub)
+            .listStyle(.plain)
+            .navigationTitle("Chat")
+            .navigationDestination(for: String.self) { npub in
+                MessageView(npub: npub)
+            }
         }
     }
 }
-
-    
-
-
 
 private struct ConversationRow: View {
     let pub: String
@@ -58,19 +55,15 @@ private struct ConversationRow: View {
                     .font(.headline)
                     .lineLimit(1)
 
-                RecentMessagePreview(
-                    npub: pub
-                )
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                RecentMessagePreview(npub: pub)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 8)
 
             VStack(alignment: .trailing, spacing: 6) {
-                ConversationTime(
-                    npub: pub
-                )
+                ConversationTime(npub: pub)
 
                 if unreadCount > 0 {
                     Text("\(unreadCount)")
@@ -93,7 +86,7 @@ private struct RecentMessagePreview: View {
         let chatKey = try! PublicKey(npub: npub).hex
         
         let predicate = #Predicate<Message> { message in
-            (message.chatKey == chatKey)
+            message.chatKey == chatKey
         }
         
         _recentMessages = Query(
@@ -116,7 +109,7 @@ private struct ConversationTime: View {
         let chatKey = try! PublicKey(npub: npub).hex
         
         let predicate = #Predicate<Message> { message in
-            (message.chatKey == chatKey)
+            message.chatKey == chatKey
         }
         
         _recentMessages = Query(
