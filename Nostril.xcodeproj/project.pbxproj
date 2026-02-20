@@ -7,8 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B5DAF4DB2F47E49800A38443 /* NostrClient in Frameworks */ = {isa = PBXBuildFile; productRef = B5DAF4DA2F47E49800A38443 /* NostrClient */; };
-		B5DAF4DE2F47ED4F00A38443 /* NostrClient in Frameworks */ = {isa = PBXBuildFile; productRef = B5DAF4DD2F47ED4F00A38443 /* NostrClient */; };
+		B501191B2F47FB3700595589 /* NostrClient in Frameworks */ = {isa = PBXBuildFile; productRef = B501191A2F47FB3600595589 /* NostrClient */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,8 +40,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				B5DAF4DE2F47ED4F00A38443 /* NostrClient in Frameworks */,
-				B5DAF4DB2F47E49800A38443 /* NostrClient in Frameworks */,
+				B501191B2F47FB3700595589 /* NostrClient in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,8 +83,7 @@
 			);
 			name = Nostril;
 			packageProductDependencies = (
-				B5DAF4DA2F47E49800A38443 /* NostrClient */,
-				B5DAF4DD2F47ED4F00A38443 /* NostrClient */,
+				B501191A2F47FB3600595589 /* NostrClient */,
 			);
 			productName = Nostril;
 			productReference = B59195CD2F46656100A2B51E /* Nostril.app */;
@@ -117,7 +114,7 @@
 			mainGroup = B59195C42F46656100A2B51E;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				B5DAF4DC2F47ED4F00A38443 /* XCLocalSwiftPackageReference "../swift-nostr-client" */,
+				B50119192F47FB3600595589 /* XCLocalSwiftPackageReference "../swift-nostr-client" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B59195CE2F46656100A2B51E /* Products */;
@@ -367,18 +364,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		B5DAF4DC2F47ED4F00A38443 /* XCLocalSwiftPackageReference "../swift-nostr-client" */ = {
+		B50119192F47FB3600595589 /* XCLocalSwiftPackageReference "../swift-nostr-client" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "../swift-nostr-client";
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		B5DAF4DA2F47E49800A38443 /* NostrClient */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = NostrClient;
-		};
-		B5DAF4DD2F47ED4F00A38443 /* NostrClient */ = {
+		B501191A2F47FB3600595589 /* NostrClient */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = NostrClient;
 		};

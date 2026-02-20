@@ -2,7 +2,6 @@ import SwiftUI
 import SwiftData
 
 struct MessageView: View {
-
     @Environment(\.modelContext) private var modelContext
     @Environment(\.datastore) private var datastore
 
@@ -24,10 +23,10 @@ struct MessageView: View {
         let other = otherUserPubKey
 
         _messages = Query(
-            filter: #Predicate<Message> { message in
-                ((message.authorPubKey == me) && (message.otherPubKey == other)) ||
-                ((message.authorPubKey == other) && (message.otherPubKey == me))
-            },
+//            filter: #Predicate<Message> { message in
+//                ((message.authorPubKey == me) && (message.otherPubKey == other)) ||
+//                ((message.authorPubKey == other) && (message.otherPubKey == me))
+//            },
             sort: [SortDescriptor(\.createdAt, order: .forward)]
         )
     }
@@ -72,6 +71,7 @@ struct MessageView: View {
                         ForEach(messages) { message in
                             MessageBubble(message: message, isMe: message.authorPubKey == myPubKey)
                                 .id(message.id)
+                                .frame(minHeight: 20) 
                                 .padding(.horizontal, 12)
                         }
                     }

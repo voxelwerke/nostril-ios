@@ -79,14 +79,25 @@ final class Datastore: NSObject {
         Task {
             do {
                 let recipient = try PublicKey(npub: recipientNpub)
-                _ = try await client.sendDirectMessage(plaintext, to: recipient.hex)
-                print("📤 DM published to \(recipientNpub)")
+                let event = try await client.sendDirectMessage(plaintext, to: recipient.hex)
+                
+                // --- FIX: Insert locally so the UI updates immediately ---
+                await MainActor.run {
+                    self.insertMessageIfNeeded(
+                        id: event.id,
+                        createdAt: Date(),
+                        content: plaintext,
+                        author: self.keyPair?.publicKeyHex ?? "",
+                        other: recipient.hex
+                    )
+                }
+                print("📤 DM published and saved locally")
             } catch {
                 print("❌ Failed to publish DM: \(error)")
             }
         }
     }
-
+    
     // MARK: - DM Parsing
 
     private func getKeyPair() throws -> KeyPair {
@@ -206,6 +217,9 @@ final class Datastore: NSObject {
                     } catch {
                         print("❌ Failed to parse/save DM: \(error)")
                     }
+                    
+                    // Force a save
+                    try? self.modelContext.save()
                 }
             }
         }
