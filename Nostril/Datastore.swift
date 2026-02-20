@@ -164,6 +164,8 @@ final class Datastore: NSObject {
         let chatKey = selfPost ? recipient : sender
         
         if let existing = try? modelContext.fetch(descriptor), !existing.isEmpty {
+            
+            print("👉 Skipped existing DM \(id.prefix(16))…")
             return
         }
 
@@ -182,6 +184,8 @@ final class Datastore: NSObject {
 
         modelContext.insert(message)
         try? modelContext.save()
+        
+        print("💾 Saved DM \(id.prefix(16))…")
     }
 
     private func updateContact(hexPubkey: String, messageDate: Date) {
@@ -237,8 +241,6 @@ final class Datastore: NSObject {
                             recipient: dm.recipientPubkey
                         )
 
-                        print("💾 Saved DM \(giftWrap.id.prefix(16))…")
-
                     } catch let error as NostrError where error == .hmacVerificationFailed {
 
                         self.insertMessage(
@@ -249,7 +251,7 @@ final class Datastore: NSObject {
                             recipient: self.keyPair!.publicKeyHex
                         )
 
-                        print("⚠️ HMAC failed — inserted placeholder")
+//                        print("⚠️ HMAC failed — inserted placeholder")
 
                     } catch {
                         print("❌ Failed to parse/save DM: \(error)")

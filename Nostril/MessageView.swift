@@ -97,7 +97,7 @@ struct MessageView: View {
         .safeAreaInset(edge: .bottom) {
             composer
         }
-        .navigationTitle("Chat")
+        .navigationTitle("\(chatKey.prefix(8))...")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
