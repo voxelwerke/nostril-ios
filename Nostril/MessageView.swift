@@ -5,29 +5,28 @@ struct MessageView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.datastore) private var datastore
 
-    let otherUserPubKey: String
-
+    let chatKey: String
+    
     @State private var inputText: String = ""
     @FocusState private var isComposerFocused: Bool
 
     @Query private var messages: [Message]
 
-    init(otherUserPubKey: String) {
-        self.otherUserPubKey = otherUserPubKey
-
-        // We can't access Environment in init,
-        // so we filter only by otherUser here.
-        let other = otherUserPubKey
+    init(chatKey: String) {
+        self.chatKey = chatKey
 
         _messages = Query(
             filter: #Predicate<Message> { message in
-                message.authorPubKey == other ||
-                message.otherPubKey == other
+                message.chatKey == chatKey
             },
             sort: [SortDescriptor(\.createdAt, order: .forward)]
         )
     }
 
+    private var recipient: String {
+        self.chatKey
+    }
+    
     private var myPubKey: String? {
         datastore?.npub
     }
@@ -46,7 +45,7 @@ struct MessageView: View {
         }
 
         do {
-            try datastore.publishDirectMessage(to: otherUserPubKey, plaintext: text)
+            try datastore.publishDirectMessage(to: recipient, plaintext: text)
             inputText = ""
         } catch {
             print("[MessageView] Error sending via datastore: \(error)")
@@ -55,7 +54,7 @@ struct MessageView: View {
 
     private func resetUnread() {
         let descriptor = FetchDescriptor<Contact>(
-            predicate: #Predicate { $0.npub == otherUserPubKey }
+            predicate: #Predicate { $0.npub == recipient }
         )
 
         if let contacts = try? modelContext.fetch(descriptor),
@@ -73,7 +72,7 @@ struct MessageView: View {
                         ForEach(messages) { message in
                             MessageBubble(
                                 message: message,
-                                isMe: message.authorPubKey == myPubKey
+                                isMe: message.sender == myPubKey
                             )
                             .id(message.id)
                             .frame(minHeight: 20)
