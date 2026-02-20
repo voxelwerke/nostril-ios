@@ -19,7 +19,7 @@ struct ChatView: View {
                     ForEach(contacts) { contact in
                         NavigationLink {
                             MessageView(
-                                chatKey: contact.npub
+                                npub: contact.npub
                             )
                         } label: {
                             ConversationRow(

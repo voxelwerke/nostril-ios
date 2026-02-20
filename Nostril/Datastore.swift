@@ -30,13 +30,32 @@ final class Datastore: NSObject {
         super.init()
 
         Task { [weak self] in
+            // Delete all messages (so we can backfill)
+//            await self?.truncateMessages()
+
             await self?.bootstrapIdentityAndRelays()
+            
         }
     }
 
     deinit {
         dmRefreshTask?.cancel()
     }
+    
+    private func truncateMessages() async {
+    let descriptor = FetchDescriptor<Message>()
+    
+    do {
+        let messages = try modelContext.fetch(descriptor)
+        for message in messages {
+            modelContext.delete(message)
+        }
+        try modelContext.save()
+        print("🗑️ Truncated \(messages.count) messages")
+    } catch {
+        print("❌ Failed to truncate messages: \(error)")
+    }
+}
 
     // MARK: - Bootstrap
     private func bootstrapIdentityAndRelays() async {

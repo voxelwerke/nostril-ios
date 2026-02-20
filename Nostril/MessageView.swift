@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import NostrClient
 
 struct MessageView: View {
     @Environment(\.modelContext) private var modelContext
@@ -12,9 +13,11 @@ struct MessageView: View {
 
     @Query private var messages: [Message]
 
-    init(chatKey: String) {
-        self.chatKey = chatKey
-
+    init(npub: String) {
+        
+        // Convert npub to a chatKey (hex)
+        self.chatKey = try! PublicKey(npub: npub).hex
+        
         _messages = Query(
             filter: #Predicate<Message> { message in
                 message.chatKey == chatKey
