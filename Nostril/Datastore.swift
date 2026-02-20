@@ -15,6 +15,7 @@ final class Datastore: NSObject {
 
     // Subscriptions tracking
     private var inboxSubscriptionId: String?
+    private var dmRefreshTask: Task<Void, Never>?
 
     // Default relays
     private static let defaultRelayURLs: [String] = [
@@ -29,6 +30,10 @@ final class Datastore: NSObject {
         Task { [weak self] in
             await self?.bootstrapIdentityAndRelays()
         }
+    }
+
+    deinit {
+        dmRefreshTask?.cancel()
     }
 
     // MARK: - Bootstrap
@@ -54,12 +59,47 @@ final class Datastore: NSObject {
             try await client.addRelays(Self.defaultRelayURLs)
             try await client.connect()
             print("🔌 Connected to relays")
-            try await subscribeToDMS(limit: 50)
+
+            restartDMSubscriptionLoop()
+
         } catch {
             print("❌ Relay setup/connect failed: \(error)")
         }
     }
 
+    // MARK: - DM Subscription Loop
+
+    private func restartDMSubscriptionLoop() {
+        // Cancel previous loop
+        dmRefreshTask?.cancel()
+
+        dmRefreshTask = Task { [weak self] in
+            guard let self else { return }
+
+            while !Task.isCancelled {
+                do {
+                    try await self.resubscribeToDMs()
+                } catch {
+                    print("❌ Resubscribe failed: \(error)")
+                }
+
+                try? await Task.sleep(for: .seconds(30))
+            }
+        }
+    }
+
+    private func resubscribeToDMs() async throws {
+        // Kill previous subscription if it exists
+        if let subId = inboxSubscriptionId {
+            await client.unsubscribe(subscriptionId: subId)
+            inboxSubscriptionId = nil
+            print("♻️ Unsubscribed previous DM subscription")
+        }
+
+        let subId = try await subscribeToDMS(limit: 5)
+        inboxSubscriptionId = subId
+        print("🛰️ Subscribed to DMs subId=\(subId)")
+    }
 
     // MARK: - Public API
 
@@ -80,8 +120,7 @@ final class Datastore: NSObject {
             do {
                 let recipient = try PublicKey(npub: recipientNpub)
                 let event = try await client.sendDirectMessage(plaintext, to: recipient.hex)
-                
-                // --- FIX: Insert locally so the UI updates immediately ---
+
                 await MainActor.run {
                     self.insertMessageIfNeeded(
                         id: event.id,
@@ -91,13 +130,14 @@ final class Datastore: NSObject {
                         other: recipient.hex
                     )
                 }
+
                 print("📤 DM published and saved locally")
             } catch {
                 print("❌ Failed to publish DM: \(error)")
             }
         }
     }
-    
+
     // MARK: - DM Parsing
 
     private func getKeyPair() throws -> KeyPair {
@@ -142,7 +182,6 @@ final class Datastore: NSObject {
         )
 
         modelContext.insert(message)
-
         try? modelContext.save()
     }
 
@@ -161,8 +200,8 @@ final class Datastore: NSObject {
 
             contact.lastMessageDate = messageDate
             contact.unreadCount += 1
-
             print("Increased unread count")
+
         } else {
 
             let contact = Contact(
@@ -172,15 +211,14 @@ final class Datastore: NSObject {
             )
 
             modelContext.insert(contact)
-            
             print("Inserted new contact")
         }
     }
-    
+
     // MARK: - Subscriptions
 
-    private func subscribeToDMS(limit: Int) async throws {
-        let subId = try await client.subscribeToDirectMessages(limit: limit) { [weak self] giftWrap in
+    private func subscribeToDMS(limit: Int) async throws -> String {
+        try await client.subscribeToDirectMessages(limit: limit) { [weak self] giftWrap in
             guard let self else { return }
 
             Task { [weak self] in
@@ -217,15 +255,11 @@ final class Datastore: NSObject {
                     } catch {
                         print("❌ Failed to parse/save DM: \(error)")
                     }
-                    
-                    // Force a save
+
                     try? self.modelContext.save()
                 }
             }
         }
-
-        self.inboxSubscriptionId = subId
-        print("🛰️ Subscribed to DMs subId=\(subId)")
     }
 }
 
