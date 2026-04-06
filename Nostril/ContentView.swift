@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import WebKit
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
@@ -16,8 +17,8 @@ struct ContentView: View {
                     ChatView(isTabBarHidden: $isTabBarHidden)
                 case "Space":
                     Text("Space")
-                case "Explore":
-                    Text("Explore")
+                case "News":
+                    NewsView()
                 default:
                     ChatView(isTabBarHidden: $isTabBarHidden)
                 }
@@ -43,8 +44,8 @@ struct ContentView: View {
             
             HStack(spacing: 0) {
                 TabButton(title: "Chat", selection: $selectedTab)
-                TabButton(title: "Space", selection: $selectedTab)
-                TabButton(title: "Explore", selection: $selectedTab)
+//                TabButton(title: "Space", selection: $selectedTab)
+                TabButton(title: "News", selection: $selectedTab)
             }
             .padding(8)
             .background(.ultraThinMaterial)
@@ -97,4 +98,63 @@ struct CircleButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.7 : 1.0)
     }
 }
+
+// MARK: - News View
+
+struct NewsView: View {
+    @State private var refreshTrigger = false
+    
+    var body: some View {
+        WebView(url: URL(string: "https://www.bennolan.com")!, refreshTrigger: $refreshTrigger)
+            .ignoresSafeArea()
+    }
+}
+
+// MARK: - WebView Wrapper
+
+struct WebView: UIViewRepresentable {
+    let url: URL
+    @Binding var refreshTrigger: Bool
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        
+        // Add pull-to-refresh control
+        let refreshControl = UIRefreshControl()
+        refreshControl.addTarget(context.coordinator, action: #selector(Coordinator.handleRefresh(_:)), for: .valueChanged)
+        webView.scrollView.addSubview(refreshControl)
+        webView.scrollView.bounces = true
+        
+        return webView
+    }
+    
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        let request = URLRequest(url: url)
+        webView.load(request)
+    }
+    
+    class Coordinator: NSObject {
+        var parent: WebView
+        
+        init(_ parent: WebView) {
+            self.parent = parent
+        }
+        
+        @objc func handleRefresh(_ refreshControl: UIRefreshControl) {
+            if let webView = refreshControl.superview?.superview as? WKWebView {
+                webView.reload()
+                
+                // End refreshing after a short delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    refreshControl.endRefreshing()
+                }
+            }
+        }
+    }
+}
+
 

@@ -18,7 +18,7 @@ struct NostrilApp: App {
     }
 
     static func createContainer() -> ModelContainer {
-        let schema = Schema([Contact.self, Message.self, Item.self])
+        let schema = Schema([Contact.self, Message.self, Item.self, Reaction.self])
         return try! ModelContainer(for: schema)
     }
 

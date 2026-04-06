@@ -11,9 +11,10 @@ struct MessageView: View {
     
     @State private var inputText: String = ""
     @FocusState private var isComposerFocused: Bool
+    @State private var selectedMessageID: String?
 
     @Query private var messages: [Message]
-    @Query private var reactions: [Reaction]
+    @Query private var reactions: [Reaction]   // ✅ no filter
 
     init(npub: String) {
         self.chatKey = try! PublicKey(npub: npub).hex
@@ -24,12 +25,6 @@ struct MessageView: View {
                 message.chatKey == chatKey
             },
             sort: [SortDescriptor(\.createdAt, order: .forward)]
-        )
-        
-        _reactions = Query(
-            filter: #Predicate<Reaction> { reaction in
-                reaction.sender == chatKey || reaction.recipient == chatKey
-            }
         )
     }
 
@@ -46,17 +41,29 @@ struct MessageView: View {
         reactions.filter { $0.targetMessageId == message.id }
     }
 
-    private func groupedReactions(for message: Message) -> [(emoji: String, count: Int)] {
-        Dictionary(grouping: reactions(for: message), by: \.emoji)
-            .map { ($0.key, $0.value.count) }
-            .sorted { $0.emoji < $1.emoji }
+    private func groupedReactions(for message: Message)
+    -> [(emoji: String, count: Int, isMine: Bool)] {
+
+        let grouped = Dictionary(grouping: reactions(for: message), by: \.emoji)
+
+        return grouped.map { emoji, reactions in
+            (
+                emoji: emoji,
+                count: reactions.count,
+                isMine: reactions.contains { $0.sender == myPubKey }
+            )
+        }
+        .sorted { $0.emoji < $1.emoji }
     }
 
     private func sendReaction(_ emoji: String, for message: Message) {
         guard let datastore else { return }
+
         datastore.sendReaction(
             emoji: emoji,
-            to: message.sender == myPubKey ? message.recipient : message.sender,
+            to: message.sender == myPubKey
+                ? message.recipient
+                : message.sender,
             reactingTo: message.id
         )
     }
@@ -66,7 +73,6 @@ struct MessageView: View {
     private func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-
         guard let datastore else { return }
 
         datastore.publishDirectMessage(to: recipient, plaintext: text)
@@ -88,54 +94,82 @@ struct MessageView: View {
     // MARK: - UI
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(messages) { message in
-                            VStack(alignment: message.sender == myPubKey ? .trailing : .leading, spacing: 4) {
-                                
-                                MessageBubble(
-                                    message: message,
-                                    isMe: message.sender == myPubKey
-                                )
-                                .contextMenu {
-                                    ReactionPicker { emoji in
-                                        sendReaction(emoji, for: message)
+        ZStack {
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(messages) { message in
+                                VStack(
+                                    alignment: message.sender == myPubKey ? .trailing : .leading,
+                                    spacing: 4
+                                ) {
+                                    
+                                    MessageBubble(
+                                        message: message,
+                                        isMe: message.sender == myPubKey
+                                    )
+                                    .overlay(alignment: .top) {
+                                        if selectedMessageID == message.id {
+                                            ReactionPicker { emoji in
+                                                sendReaction(emoji, for: message)
+                                                withAnimation {
+                                                    selectedMessageID = nil
+                                                }
+                                            }
+                                            .offset(y: -55)
+                                            .transition(.scale.combined(with: .opacity))
+                                            .zIndex(1)
+                                        }
+                                    }
+                                    .onLongPressGesture {
+                                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            selectedMessageID = message.id
+                                        }
+                                    }
+
+                                    let grouped = groupedReactions(for: message)
+                                    if !grouped.isEmpty {
+                                        ReactionBar(reactions: grouped)
                                     }
                                 }
-
-                                if !groupedReactions(for: message).isEmpty {
-                                    ReactionBar(
-                                        reactions: groupedReactions(for: message)
-                                    )
-                                }
+                                .id(message.id)
+                                .padding(.horizontal, 12)
                             }
-                            .id(message.id)
-                            .padding(.horizontal, 12)
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+                    .onChange(of: messages.count) { _, _ in
+                        if let last = messages.last {
+                            proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
-                    .padding(.vertical, 8)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .onChange(of: messages.count) { _, _ in
-                    if let last = messages.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
-                }
-                .onAppear {
-                    if let last = messages.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
+                    .onAppear {
+                        if let last = messages.last {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom) {
+                composer
+            }
+            .navigationTitle("\(npub.prefix(8))...")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear { resetUnread() }
+
+            if selectedMessageID != nil {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation {
+                            selectedMessageID = nil
+                        }
+                    }
+            }
         }
-        .safeAreaInset(edge: .bottom) {
-            composer
-        }
-        .navigationTitle("\(npub.prefix(8))...")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear { resetUnread() }
     }
 
     // MARK: - Composer
@@ -190,24 +224,39 @@ private struct MessageBubble: View {
         }
     }
 }
+
 private struct ReactionPicker: View {
     let emojis = ["❤️","👍","👎","😂","😮","😢"]
     let onSelect: (String) -> Void
-
+    
     var body: some View {
-        ForEach(emojis, id: \.self) { emoji in
-            Button {
-                onSelect(emoji)
-            } label: {
-                Text(emoji)
-                    .font(.system(size: 28))
+        HStack(spacing: 14) {
+            ForEach(emojis, id: \.self) { emoji in
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onSelect(emoji)
+                } label: {
+                    Text(emoji)
+                        .font(.system(size: 28))
+                        .padding(6)
+                        .background(
+                            Circle().fill(.ultraThinMaterial)
+                        )
+                }
+                .buttonStyle(.plain)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Capsule().fill(.ultraThinMaterial)
+        )
+        .shadow(radius: 10)
     }
 }
 
 private struct ReactionBar: View {
-    let reactions: [(emoji: String, count: Int)]
+    let reactions: [(emoji: String, count: Int, isMine: Bool)]
 
     var body: some View {
         HStack(spacing: 6) {
@@ -217,14 +266,16 @@ private struct ReactionBar: View {
                     if reaction.count > 1 {
                         Text("\(reaction.count)")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
                     }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    Capsule()
-                        .fill(Color(.secondarySystemBackground))
+                    Capsule().fill(
+                        reaction.isMine
+                        ? Color.blue.opacity(0.15)
+                        : Color(.secondarySystemBackground)
+                    )
                 )
             }
         }
