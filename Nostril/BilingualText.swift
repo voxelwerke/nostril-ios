@@ -14,7 +14,7 @@ struct BilingualText: View {
     let teReo: String
     let english: String
     
-    @State private var showTeReo = false
+    @State private var showTeReo = true
     @State private var offset: CGFloat = 0
     
     var body: some View {
@@ -57,7 +57,7 @@ struct BilingualText: View {
             // Start with English, then auto-reveal Te Reo after 1 second
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) {
-                    showTeReo = true
+                    showTeReo = false
                 }
             }
         }
