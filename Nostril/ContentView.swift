@@ -35,13 +35,15 @@ struct ContentView: View {
     private var tabBar: some View {
         HStack(spacing: 15) {
             
-            // Share Button
-            ShareLink(item: datastore?.npub ?? "something") {
-                Image(systemName: "square.and.arrow.up")
+            // ✅ Settings button
+            NavigationLink {
+                SettingsView()
+            } label: {
+                Image(systemName: "gearshape.fill")
                     .font(.system(size: 14, weight: .bold))
             }
             .buttonStyle(CircleButtonStyle())
-            
+
             HStack(spacing: 0) {
                 TabButton(title: "Chat", selection: $selectedTab)
 //                TabButton(title: "Space", selection: $selectedTab)
@@ -54,7 +56,7 @@ struct ContentView: View {
             .padding(.horizontal)
             .padding(.top, 8)
 
-            // ✅ New message button now navigates
+            // ✅ New message button
             NavigationLink {
                 NewChatView()
             } label: {
@@ -105,7 +107,7 @@ struct NewsView: View {
     @State private var refreshTrigger = false
     
     var body: some View {
-        WebView(url: URL(string: "https://www.bennolan.com")!, refreshTrigger: $refreshTrigger)
+        WebView(url: URL(string: "https://www.nostril.com")!, refreshTrigger: $refreshTrigger)
             .ignoresSafeArea()
     }
 }
