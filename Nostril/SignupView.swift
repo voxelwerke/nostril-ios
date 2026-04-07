@@ -2,164 +2,151 @@ import SwiftUI
 import NostrClient
 import Security
 
-
 struct SignupView: View {
     @AppStorage("displayName") private var displayName: String = ""
     @AppStorage("myPubKey") private var myPubKey: String = ""
+    @EnvironmentObject private var datastoreHolder: DatastoreHolder
 
     @State private var tempDisplayName: String = ""
     @State private var generatedPubKey: String = ""
     @State private var generatedPrivateKey: String = ""
     @State private var isImportingPrivateKey: Bool = false
     @State private var importedPrivateKey: String = ""
+    @State private var showAdvanced: Bool = false
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Welcome to Nostril")
-                    .font(.largeTitle.weight(.semibold))
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Username")
-                        .font(.headline)
-                    TextField("Enter a username", text: $tempDisplayName)
-                        .textFieldStyle(.plain)
-                        .textInputAutocapitalization(.words)
-                        .disableAutocorrection(true)
-                    Divider()
-                }
-
-                if isImportingPrivateKey {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Private key")
-                            .font(.headline)
-                        TextField("Paste your private key", text: $importedPrivateKey, axis: .vertical)
-                            .textFieldStyle(.plain)
-                            .lineLimit(3, reservesSpace: true)
-                            .textInputAutocapitalization(.never)
-                            .disableAutocorrection(true)
-                        Divider()
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Your nostr identity (npub)")
-                            .font(.headline)
+            ZStack {
+                Tukutuku()
+                    .ignoresSafeArea()
+                
+                VStack(alignment: .leading, spacing: 20) {
                         
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(displayedNpub)
-                                    .font(.body.monospaced())
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
+                        // 2. Header Block
+                        VStack(alignment: .leading, spacing: 12) {
+                            BilingualText(
+                                teReo: "Kia ora e hoa",
+                                english: "Hello, friend"
+                            ).font(.largeTitle.weight(.bold))
+                            
+                            BilingualText(
+                                teReo: "Ko te whānau te mea nui o te ao.",
+                                english: "Family is the greatest thing in the world."
+                            )
+                            .font(.subheadline)
+                            
+                            Text("🥝 Proudly made in New Zealand")
+                                .font(.caption).opacity(0.7)
+                        }
+                        .padding(24)
+                        .background(Color.black.opacity(0.9))
+                        .cornerRadius(30)
+                        
+
+                        // 3. Form Block
+                        VStack(alignment: .leading, spacing: 20) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("What'd we call ya?")
+                                    .font(.headline)
+                                
+                                TextField("Herbie Hancock", text: $tempDisplayName)
+                                    .textFieldStyle(.plain)
+                                    .textInputAutocapitalization(.words)
+                                    .font(.title3)
+                                
                                 Divider()
                             }
-
-                            Button {
-                                regenerateKeys()
-                            } label: {
-                                Image(systemName: "dice")
-                                    .imageScale(.large)
+                            
+                            Toggle("Advanced", isOn: $showAdvanced)
+                                .tint(.orange)
+                            
+                            if showAdvanced {
+                                advancedInputs
+                                    .transition(.opacity)
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Regenerate key")
                         }
+                        .padding(24)
+                        .background(Color.black.opacity(0.9))
+                        .cornerRadius(30)
+
+                        // 4. Action Button
+                        Button(action: beginTapped) {
+                            Text("Begin")
+                                .font(.system(size: 20, weight: .black, design: .rounded))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 20)
+                                .background(
+                                    Capsule()
+                                        .fill(canBegin ? AnyShapeStyle(LinearGradient(colors: [.orange, .red], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(Color(red:0.3, green: 0.3, blue: 0.3).opacity(0.8)))
+                                )
+                                .foregroundColor(.white)
+                                
+
+                        }
+                        .disabled(!canBegin)
+                        .padding(.top, 10)
+                        
+                        Spacer(minLength: 100)
                     }
-                }
-
-                Text("Your private key will be stored in your keychain. ")
+                    .padding(48)
                 
-                Button {
-                    withAnimation { isImportingPrivateKey.toggle() }
-                } label: {
-                    Text(isImportingPrivateKey ? "Generate new key" : "Import key")
-                        .underline()
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button("Begin", action: beginTapped)
-                    .frame(maxWidth: .infinity)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!canBegin)
             }
-            .padding()
             .onAppear(perform: prepareKeys)
         }
     }
 
+    private var advancedInputs: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if isImportingPrivateKey {
+                TextField("Paste your nsec", text: $importedPrivateKey, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(.body, design: .monospaced))
+                    .lineLimit(3)
+            } else {
+                HStack {
+                    Text(displayedNpub)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(action: regenerateKeys) {
+                        Image(systemName: "dice.fill")
+                    }.buttonStyle(.plain)
+                }
+            }
+            
+            Button(isImportingPrivateKey ? "Generate new key" : "Import key") {
+                withAnimation { isImportingPrivateKey.toggle() }
+            }.font(.caption).underline()
+        }
+    }
+
+    // MARK: - Logic
     private var displayedNpub: String {
         let raw = generatedPubKey.isEmpty ? "Will be generated" : generatedPubKey
-        // Common UI convention: show a short prefix and suffix with an ellipsis in the middle.
-        // Example: npub1abcd…wxyz
-        return truncateMiddle(raw, prefix: 10, suffix: 8)
+        guard raw.count > 20 else { return raw }
+        return "\(raw.prefix(10))...\(raw.suffix(8))"
     }
-
+    
     private var canBegin: Bool {
-        if isImportingPrivateKey {
-            return !tempDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !importedPrivateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        } else {
-            return !tempDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        !tempDisplayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-
-    private func prepareKeys() {
-        if generatedPubKey.isEmpty {
-            regenerateKeys()
-        }
-    }
-
+    
+    private func prepareKeys() { if generatedPubKey.isEmpty { regenerateKeys() } }
+    
     private func regenerateKeys() {
-        do {
-            // Generate a real nostr keypair via NostrClient
-            let kp = try KeyPair()
-            // Display npub in the UI
+        if let kp = try? KeyPair() {
             generatedPubKey = kp.npub
-            // Store nsec for persistence on Begin
             generatedPrivateKey = kp.nsec
-        } catch {
-            generatedPubKey = ""
-            generatedPrivateKey = ""
-            print("❌ [Signup] Failed to generate keys: \(error)")
         }
     }
-
+    
     private func beginTapped() {
-        // Persist display name
-        displayName = tempDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if isImportingPrivateKey {
-            // Store the private key in keychain (stubbed here). Derive public key from the private key.
-            storePrivateKeyInKeychain(importedPrivateKey)
-            do {
-                let kp = try KeyPair(nsec: importedPrivateKey)
-                myPubKey = kp.npub
-            } catch {
-                print("❌ [Signup] Invalid imported private key: \(error)")
-                myPubKey = ""
-            }
-        } else {
-            // Store the generated public key (npub)
-            myPubKey = generatedPubKey
-            // Store the generated private key (nsec) in keychain
-            storePrivateKeyInKeychain(generatedPrivateKey)
-        }
+        displayName = tempDisplayName
+        storePrivateKeyInKeychain(isImportingPrivateKey ? importedPrivateKey : generatedPrivateKey)
+        datastoreHolder.rebuildIfNeeded()
     }
-
-    private func truncateMiddle(_ s: String, prefix: Int, suffix: Int) -> String {
-        guard s.count > prefix + suffix + 1 else { return s }
-        let start = s.prefix(prefix)
-        let end = s.suffix(suffix)
-        return "\(start)…\(end)"
-    }
-
+    
     private func storePrivateKeyInKeychain(_ key: String) {
         KeychainStore.saveNsec(key)
     }
-}
-
-#Preview {
-    SignupView()
 }
